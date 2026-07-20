@@ -5,3 +5,6 @@ dist/
 
 # Claude Code local (per-machine) settings
 .claude/settings.local.json
+
+# Python virtualenvs
+.venv/

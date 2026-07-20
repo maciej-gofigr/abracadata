@@ -4,17 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+Frontend (Vite SPA at repo root):
+
 ```sh
 npm install
 npm run dev      # Vite dev server at http://localhost:5173
-npm run build    # tsc type-check (noEmit) THEN vite build to dist/
+npm run build    # tsc type-check (noEmit) THEN vite build to dist/  — the type gate
 npm run preview  # serve the production build
+npm test         # Vitest (happy-dom) — unit + component tests in src/**/*.test.{ts,tsx}
 ```
 
-There is no test runner, linter, or formatter configured. `npm run build` is the only
-check — it fails the build on any TypeScript error, and `tsconfig.json` enables `strict`,
-`noUnusedLocals`, and `noUnusedParameters`, so unused imports/vars are hard errors. Run it
-before considering a change done.
+Backend (FastAPI in `backend/`) and full stack:
+
+```sh
+# backend tests (venv; get-pip because the box lacks ensurepip/system pip)
+python3 -m venv --without-pip backend/.venv && curl -fsSL https://bootstrap.pypa.io/get-pip.py | backend/.venv/bin/python
+backend/.venv/bin/pip install -r backend/requirements-dev.txt
+cd backend && ./.venv/bin/python -m pytest      # tests in backend/tests/
+
+docker compose up                               # full stack: frontend :8080 (nginx) + backend :8000
+```
+
+`npm run build` is the type gate — `tsconfig.json` enables `strict`, `noUnusedLocals`, and
+`noUnusedParameters`, so unused imports/vars are hard errors (test files are excluded from
+this build via `tsconfig.json` `exclude`). No linter/formatter is configured. **Node 18** on
+this box: some newer deps assume Node 20 — that's why tests use happy-dom (not jsdom) and why
+a clean `node_modules` matters (see history if `vite`/`rollup` misbehave).
 
 ## Big picture
 
