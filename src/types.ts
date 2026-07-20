@@ -5,16 +5,55 @@ export interface TablePreview {
   rowCount: number;
 }
 
-export interface DiffSummary {
-  rowsIn: number;
-  rowsOut: number;
-  columnsAdded: string[];
-  columnsRemoved: string[];
+/** A named output table (a recipe can return several). */
+export interface NamedTable {
+  name: string;
+  preview: TablePreview;
 }
 
-export interface RunResult {
+/** A Plotly figure spec, built in Python and rendered by Plotly.js in the browser. */
+export interface PlotlyFigure {
+  data: unknown[];
+  layout?: Record<string, unknown>;
+}
+
+export interface FigureSpec {
+  name: string;
+  figure: PlotlyFigure;
+}
+
+/** One uploaded input file, keyed by an editable alias the recipe references. */
+export interface InputFile {
+  alias: string;
+  fileName: string;
   preview: TablePreview;
-  diff: DiffSummary;
+}
+
+export type ParamType =
+  | "number"
+  | "currency"
+  | "date"
+  | "enum"
+  | "bool"
+  | "text";
+
+/** An inferred, user-adjustable knob (default = the value the recipe first used). */
+export interface RecipeParam {
+  name: string;
+  label: string;
+  type: ParamType;
+  default: string | number | boolean;
+  options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  help?: string;
+}
+
+/** Result of running a recipe: 1+ tables, 0+ plots. */
+export interface RunResult {
+  tables: NamedTable[];
+  plots: FigureSpec[];
 }
 
 export interface ChatMessage {
@@ -28,10 +67,20 @@ export interface Settings {
   shareSampleRows: boolean;
 }
 
+/** v2 recipe metadata header. */
 export interface RecipeMeta {
-  version: 1;
+  version: 2;
   name: string;
   created: string;
   prompts: string[];
-  expectedColumns: string[];
+  inputs: { alias: string; columns: string[] }[];
+  params: RecipeParam[];
+}
+
+/** Legacy — kept for the (currently unused) DiffSummary component. */
+export interface DiffSummary {
+  rowsIn: number;
+  rowsOut: number;
+  columnsAdded: string[];
+  columnsRemoved: string[];
 }

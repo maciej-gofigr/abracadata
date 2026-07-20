@@ -376,3 +376,37 @@ th {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* v2 runtime UI */
+.sample-hint { margin-top: 12px; color: var(--muted); font-size: 14px; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: start;
+}
+.alias { font-weight: 600; }
+.from-file { color: var(--muted); font-weight: 400; font-size: 12.5px; font-family: var(--mono); }
+
+.params-card { margin-bottom: 16px; }
+.params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.param { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.param-label { font-weight: 500; }
+.param-help { color: var(--muted); font-weight: 400; }
+.param select,
+.param input[type="text"],
+.param input[type="date"] {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+}
+.num-input {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 0 10px; background: var(--surface);
+}
+.num-input span { color: var(--muted); }
+.num-input input { border: none; padding: 8px 4px; width: 100%; font: inherit; outline: none; background: transparent; }
+
+.output { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+.plot-host { min-height: 320px; }

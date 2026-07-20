@@ -1,111 +1,48 @@
 import { useEffect, useState } from "react";
 import { APP_NAME, APP_TAGLINE } from "./branding";
-import { ChatPanel } from "./components/ChatPanel";
 import { DataTable } from "./components/DataTable";
-import { DiffSummary } from "./components/DiffSummary";
 import { DropZone } from "./components/DropZone";
+import { PlotView } from "./components/PlotView";
 import { ScriptPanel } from "./components/ScriptPanel";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { DEFAULT_MODEL, generateScript } from "./lib/llm";
 import { pyWorker } from "./lib/pyodide";
 import { buildRecipe, parseRecipe } from "./lib/recipe";
+import {
+  SAMPLE_CUSTOMERS_CSV,
+  SAMPLE_ORDERS_CSV,
+  SAMPLE_PARAMS,
+  SAMPLE_SCRIPT,
+} from "./lib/fixtures";
 import type {
-  ChatMessage,
+  InputFile,
+  RecipeMeta,
+  RecipeParam,
   RunResult,
-  Settings,
-  TablePreview,
 } from "./types";
 
-const SETTINGS_KEY = "settings.v1";
-
-function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return { ...defaultSettings(), ...JSON.parse(raw) };
-  } catch {
-    /* fall through */
-  }
-  return defaultSettings();
-}
-
-function defaultSettings(): Settings {
-  return { apiKey: "", model: DEFAULT_MODEL, shareSampleRows: true };
-}
-
-interface InputState {
-  fileName: string;
-  preview: TablePreview;
-}
+type ParamValues = Record<string, string | number | boolean>;
 
 export function App() {
-  const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [input, setInput] = useState<InputState | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputs, setInputs] = useState<InputFile[]>([]);
   const [script, setScript] = useState<string | null>(null);
-  const [prompts, setPrompts] = useState<string[]>([]);
+  const [params, setParams] = useState<RecipeParam[]>([]);
+  const [paramValues, setParamValues] = useState<ParamValues>({});
   const [output, setOutput] = useState<RunResult | null>(null);
-  const [loadingFile, setLoadingFile] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  }, [settings]);
 
   // Start downloading Pyodide right away so the first file load is fast.
   useEffect(() => {
     pyWorker.warmUp();
   }, []);
 
-  async function handleFiles(files: File[]) {
-    const file = files[0];
-    if (!file) return;
-    setFileError(null);
-    if (file.name.toLowerCase().endsWith(".py")) {
-      await loadRecipeFile(file);
-      return;
-    }
-    setLoadingFile(true);
-    try {
-      const buffer = await file.arrayBuffer();
-      const { preview } = await pyWorker.loadFile(file.name, buffer);
-      setInput({ fileName: file.name, preview });
-      setOutput(null);
-      setRunError(null);
-      setMessages([]);
-      // If a recipe is already loaded, apply it to the new file immediately.
-      if (script) await runScript(script);
-    } catch (err) {
-      setFileError(errorMessage(err));
-    } finally {
-      setLoadingFile(false);
-    }
-  }
-
-  async function loadRecipeFile(file: File) {
-    const text = await file.text();
-    const parsed = parseRecipe(text);
-    if (!parsed) {
-      setFileError(
-        `${file.name} doesn't look like a recipe (no transform() function found).`,
-      );
-      return;
-    }
-    setScript(parsed.script);
-    setPrompts(parsed.meta?.prompts ?? []);
-    setOutput(null);
-    setRunError(null);
-    if (input) await runScript(parsed.script);
-  }
-
-  async function runScript(source: string) {
+  async function run(src: string, values: ParamValues, ins: InputFile[]) {
+    if (!src || ins.length === 0) return;
     setRunning(true);
     setRunError(null);
     try {
-      const result = await pyWorker.runScript(source);
+      const result = await pyWorker.runScript(src, values);
       setOutput(result);
     } catch (err) {
       setOutput(null);
@@ -115,62 +52,121 @@ export function App() {
     }
   }
 
-  async function sendPrompt(promptText: string) {
-    if (!settings.apiKey) {
-      setSettingsOpen(true);
-      return;
-    }
-    const history: ChatMessage[] = [
-      ...messages,
-      { role: "user", text: promptText },
-    ];
-    setMessages(history);
-    setGenerating(true);
-    try {
-      const { text, script: newScript } = await generateScript(
-        settings,
-        input,
-        history,
-      );
-      setMessages([...history, { role: "assistant", text }]);
-      if (newScript) {
-        setScript(newScript);
-        setPrompts((p) => [...p, promptText]);
-        if (input) await runScript(newScript);
+  async function handleFiles(files: File[]) {
+    setFileError(null);
+    let current = inputs;
+    let loadedRecipe = false;
+    for (const file of files) {
+      if (file.name.toLowerCase().endsWith(".py")) {
+        loadedRecipe = (await loadRecipeFile(file)) || loadedRecipe;
+      } else {
+        const added = await loadDataFile(file, current);
+        if (added) current = [...current.filter((i) => i.alias !== added.alias), added];
       }
-    } catch (err) {
-      setMessages([
-        ...history,
-        { role: "assistant", text: `Something went wrong: ${errorMessage(err)}` },
-      ]);
-    } finally {
-      setGenerating(false);
+    }
+    setInputs(current);
+    if (script && current.length && !loadedRecipe) {
+      void run(script, paramValues, current);
     }
   }
 
-  async function downloadOutput() {
-    if (!input) return;
-    const { csv } = await pyWorker.exportOutput();
-    const base = input.fileName.replace(/\.[^.]+$/, "");
-    downloadBlob(`${base}-transformed.csv`, csv, "text/csv");
+  async function loadDataFile(
+    file: File,
+    current: InputFile[],
+  ): Promise<InputFile | null> {
+    setLoadingMsg(`Reading ${file.name}… (first load also fetches the Python runtime)`);
+    try {
+      const alias = uniqueAlias(aliasFromFilename(file.name), current);
+      const buffer = await file.arrayBuffer();
+      const { preview } = await pyWorker.loadInput(alias, file.name, buffer);
+      return { alias, fileName: file.name, preview };
+    } catch (err) {
+      setFileError(errorMessage(err));
+      return null;
+    } finally {
+      setLoadingMsg(null);
+    }
+  }
+
+  async function loadRecipeFile(file: File): Promise<boolean> {
+    const text = await file.text();
+    const parsed = parseRecipe(text);
+    if (!parsed) {
+      setFileError(`${file.name} doesn't look like a recipe (no transform() found).`);
+      return false;
+    }
+    setScript(parsed.script);
+    const ps = parsed.meta?.params ?? [];
+    setParams(ps);
+    const values = defaultsOf(ps);
+    setParamValues(values);
+    if (inputs.length) void run(parsed.script, values, inputs);
+    return true;
+  }
+
+  async function loadSample() {
+    setFileError(null);
+    setRunError(null);
+    setOutput(null);
+    setLoadingMsg("Loading sample files… (first load also fetches the Python runtime, ~10s)");
+    try {
+      await pyWorker.clearInputs();
+      const enc = new TextEncoder();
+      const ord = await pyWorker.loadInput("orders", "orders.csv", enc.encode(SAMPLE_ORDERS_CSV).buffer);
+      const cus = await pyWorker.loadInput("customers", "customers.csv", enc.encode(SAMPLE_CUSTOMERS_CSV).buffer);
+      const next: InputFile[] = [
+        { alias: "orders", fileName: "orders.csv", preview: ord.preview },
+        { alias: "customers", fileName: "customers.csv", preview: cus.preview },
+      ];
+      setInputs(next);
+      setScript(SAMPLE_SCRIPT);
+      setParams(SAMPLE_PARAMS);
+      const values = defaultsOf(SAMPLE_PARAMS);
+      setParamValues(values);
+      await run(SAMPLE_SCRIPT, values, next);
+    } catch (err) {
+      setFileError(errorMessage(err));
+    } finally {
+      setLoadingMsg(null);
+    }
+  }
+
+  function setParam(name: string, value: string | number | boolean) {
+    const values = { ...paramValues, [name]: value };
+    setParamValues(values);
+    if (script) void run(script, values, inputs);
+  }
+
+  function reset() {
+    setInputs([]);
+    setScript(null);
+    setParams([]);
+    setParamValues({});
+    setOutput(null);
+    setRunError(null);
+    setFileError(null);
+    void pyWorker.clearInputs();
+  }
+
+  async function downloadTable(name: string) {
+    const { csv } = await pyWorker.exportTable(name);
+    downloadBlob(`${name.replace(/\s+/g, "_")}.csv`, csv, "text/csv");
   }
 
   function saveRecipe() {
     if (!script) return;
-    const name = prompts[0]
-      ? slugify(prompts[0])
-      : input
-        ? slugify(input.fileName.replace(/\.[^.]+$/, ""))
-        : "recipe";
-    const content = buildRecipe(script, {
-      version: 1,
-      name,
+    const meta: RecipeMeta = {
+      version: 2,
+      name: "recipe",
       created: new Date().toISOString(),
-      prompts,
-      expectedColumns: input?.preview.columns ?? [],
-    });
-    downloadBlob(`${name}.py`, content, "text/x-python");
+      prompts: [],
+      inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
+      params,
+    };
+    downloadBlob("recipe.py", buildRecipe(script, meta), "text/x-python");
   }
+
+  const hasInputs = inputs.length > 0;
 
   return (
     <div className="app">
@@ -179,94 +175,189 @@ export function App() {
           <h1>{APP_NAME}</h1>
           <p className="tagline">{APP_TAGLINE}</p>
         </div>
-        <button className="link-btn" onClick={() => setSettingsOpen(true)}>
-          {settings.apiKey ? "Settings" : "Set API key"}
-        </button>
+        {hasInputs && (
+          <button className="link-btn" onClick={reset}>
+            Start over
+          </button>
+        )}
       </header>
 
-      {!input && (
-        <DropZone
-          onFiles={handleFiles}
-          label="Drop a CSV or Excel file here (or a saved recipe .py)"
-          hint="Everything runs in your browser — your data never leaves this machine."
-        />
+      {!hasInputs && (
+        <>
+          <DropZone
+            onFiles={handleFiles}
+            label="Drop one or more CSV / Excel files (or a saved recipe .py)"
+            hint="Everything runs in your browser — your data never leaves this machine."
+          />
+          <p className="sample-hint">
+            No file handy?{" "}
+            <button className="link-btn" onClick={loadSample}>
+              Load sample files (orders + customers) →
+            </button>
+          </p>
+        </>
       )}
-      {loadingFile && (
-        <div className="status">
-          Loading file… (the first load also downloads the Python runtime,
-          ~10s)
-        </div>
-      )}
+
+      {loadingMsg && <div className="status">{loadingMsg}</div>}
       {fileError && <div className="error">{fileError}</div>}
 
-      {input && (
-        <main className="columns">
-          <section className="data-col">
-            <div className="card">
-              <div className="card-header">
-                <h2>Input · {input.fileName}</h2>
-                <DropZone
-                  onFiles={handleFiles}
-                  label="Replace file"
-                  compact
-                />
-              </div>
-              <DataTable preview={input.preview} />
-            </div>
-            {output && (
-              <div className="card">
+      {hasInputs && (
+        <>
+          <section className="inputs-grid">
+            {inputs.map((inp) => (
+              <div className="card" key={inp.alias}>
                 <div className="card-header">
-                  <h2>Output</h2>
-                  <button onClick={downloadOutput}>Download CSV</button>
+                  <h2>
+                    <span className="alias">{inp.alias}</span>{" "}
+                    <span className="from-file">from {inp.fileName}</span>
+                  </h2>
+                  <span className="muted">
+                    {inp.preview.rowCount.toLocaleString()} rows · {inp.preview.columns.length} cols
+                  </span>
                 </div>
-                <DiffSummary diff={output.diff} />
-                <DataTable preview={output.preview} />
+                <DataTable preview={inp.preview} maxRows={6} />
               </div>
-            )}
+            ))}
+            <DropZone onFiles={handleFiles} label="＋ Add another file" compact />
           </section>
-          <aside className="chat-col">
-            <ChatPanel
-              messages={messages}
-              busy={generating || running}
-              disabled={!input}
-              runError={runError}
-              onSend={sendPrompt}
-            />
-            <ScriptPanel
-              script={script}
-              running={running}
-              canRun={!!input}
-              onChange={setScript}
-              onRun={() => script && runScript(script)}
-              onSaveRecipe={saveRecipe}
-            />
-          </aside>
-        </main>
-      )}
 
-      {settingsOpen && (
-        <SettingsPanel
-          settings={settings}
-          onChange={setSettings}
-          onClose={() => setSettingsOpen(false)}
-        />
+          {params.length > 0 && (
+            <section className="card params-card">
+              <div className="card-header">
+                <h2>Parameters</h2>
+                <span className="muted">edits re-run instantly, in your browser</span>
+              </div>
+              <div className="params-grid">
+                {params.map((p) => (
+                  <ParamControl
+                    key={p.name}
+                    param={p}
+                    value={paramValues[p.name]}
+                    onChange={(v) => setParam(p.name, v)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {running && <div className="status">Running…</div>}
+          {runError && (
+            <div className="run-error">
+              <div className="run-error-title">That recipe didn't run:</div>
+              <pre>{runError}</pre>
+            </div>
+          )}
+
+          {output && (
+            <section className="output">
+              {output.tables.map((t) => (
+                <div className="card" key={t.name}>
+                  <div className="card-header">
+                    <h2>{t.name}</h2>
+                    <span className="muted">
+                      {t.preview.rowCount.toLocaleString()} rows · {t.preview.columns.length} cols
+                    </span>
+                    <button onClick={() => downloadTable(t.name)}>Download CSV</button>
+                  </div>
+                  <DataTable preview={t.preview} />
+                </div>
+              ))}
+              {output.plots.map((p) => (
+                <PlotView key={p.name} spec={p} />
+              ))}
+            </section>
+          )}
+
+          <ScriptPanel
+            script={script}
+            running={running}
+            canRun={hasInputs}
+            onChange={setScript}
+            onRun={() => script && run(script, paramValues, inputs)}
+            onSaveRecipe={saveRecipe}
+          />
+        </>
       )}
     </div>
   );
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function ParamControl({
+  param,
+  value,
+  onChange,
+}: {
+  param: RecipeParam;
+  value: string | number | boolean;
+  onChange: (v: string | number | boolean) => void;
+}) {
+  return (
+    <label className="param">
+      <span className="param-label">
+        {param.label}
+        {param.help && <span className="param-help"> — {param.help}</span>}
+      </span>
+      {param.type === "enum" ? (
+        <select value={String(value)} onChange={(e) => onChange(e.target.value)}>
+          {(param.options ?? []).map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      ) : param.type === "bool" ? (
+        <input
+          type="checkbox"
+          checked={Boolean(value)}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+      ) : param.type === "number" || param.type === "currency" ? (
+        <div className="num-input">
+          {param.type === "currency" && <span>$</span>}
+          <input
+            type="number"
+            value={Number(value)}
+            min={param.min}
+            max={param.max}
+            step={param.step ?? 1}
+            onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+          />
+        </div>
+      ) : param.type === "date" ? (
+        <input type="date" value={String(value)} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <input type="text" value={String(value)} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </label>
+  );
 }
 
-function slugify(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || "recipe"
+function defaultsOf(ps: RecipeParam[]): ParamValues {
+  const v: ParamValues = {};
+  for (const p of ps) v[p.name] = p.default;
+  return v;
+}
+
+function aliasFromFilename(name: string): string {
+  let base = name.replace(/\.[^.]+$/, "");
+  base = base.replace(
+    /[ _-]*(20\d{2}[-_]?\d{2}(?:[-_]?\d{2})?|\d{6,8}|q[1-4]|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i,
+    "",
   );
+  base = base.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase();
+  return base || "input";
+}
+
+function uniqueAlias(base: string, current: InputFile[]): string {
+  const taken = new Set(current.map((i) => i.alias));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function downloadBlob(name: string, content: string, type: string) {

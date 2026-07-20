@@ -39,19 +39,27 @@ class PyWorker {
     void this.call({ type: "init" }).catch(() => {});
   }
 
-  loadFile(name: string, buffer: ArrayBuffer) {
+  clearInputs() {
+    return this.call<null>({ type: "clearInputs" });
+  }
+
+  loadInput(alias: string, name: string, buffer: ArrayBuffer) {
     return this.call<{ preview: TablePreview }>(
-      { type: "loadFile", name, buffer },
+      { type: "loadInput", alias, name, buffer },
       [buffer],
     );
   }
 
-  runScript(script: string) {
-    return this.call<RunResult>({ type: "runScript", script });
+  runScript(source: string, params: Record<string, unknown>) {
+    return this.call<RunResult>({
+      type: "runScript",
+      script: source,
+      params: JSON.stringify(params ?? {}),
+    });
   }
 
-  exportOutput() {
-    return this.call<{ csv: string }>({ type: "exportOutput" });
+  exportTable(name: string) {
+    return this.call<{ csv: string }>({ type: "exportTable", table: name });
   }
 }
 
