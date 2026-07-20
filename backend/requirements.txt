@@ -2,3 +2,5 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 anthropic[bedrock]==0.42.0
 boto3==1.35.90
+SQLAlchemy>=2
+psycopg[binary]>=3

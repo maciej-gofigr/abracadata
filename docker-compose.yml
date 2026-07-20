@@ -3,10 +3,32 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://datarecipes:datarecipes@postgres:5432/datarecipes
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - datarecipes
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: datarecipes
+      POSTGRES_USER: datarecipes
+      POSTGRES_PASSWORD: datarecipes
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - datarecipes
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datarecipes -d datarecipes"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -24,3 +46,6 @@ services:
 networks:
   datarecipes:
     driver: bridge
+
+volumes:
+  pgdata:
