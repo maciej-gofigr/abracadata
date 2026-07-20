@@ -2,4 +2,4 @@
 // real name is chosen — nothing else in the codebase should hardcode it.
 export const APP_NAME = "Data Recipes";
 export const APP_TAGLINE =
-  "Drop a spreadsheet, describe a transformation, keep the script.";
+  "Join, clean, summarize, and chart your spreadsheets — once. Reuse the recipe forever.";

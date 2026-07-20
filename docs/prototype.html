@@ -1,0 +1,998 @@
+<title>Data Recipes — workspace prototype</title>
+<style>
+  :root {
+    --ground: #FBFAF8; --surface: #FFFFFF; --surface-2: #F5F3EF;
+    --ink: #1C1B22; --muted: #6B6A78; --faint: #9C9AA6;
+    --line: #EAE7E1; --line-strong: #DED9D0;
+    --accent: #5B5BD6; --accent-press: #4A4AC4; --accent-tint: #EEEEFB;
+    --add: #2F9E68; --add-tint: #E7F4EC; --remove: #C6537A; --remove-tint: #F9EAF0;
+    --shadow: 0 1px 2px rgba(28,27,34,.04), 0 8px 24px rgba(28,27,34,.06);
+    --shadow-lift: 0 2px 6px rgba(28,27,34,.06), 0 18px 40px rgba(28,27,34,.12);
+    --radius: 12px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --grid: rgba(28,27,34,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #151419; --surface: #1E1D24; --surface-2: #26242D;
+      --ink: #ECEAF2; --muted: #A09EAC; --faint: #726F7E;
+      --line: #2C2A34; --line-strong: #383641;
+      --accent: #8A8AF0; --accent-press: #9C9CF5; --accent-tint: #23223a;
+      --add: #5FCB92; --add-tint: #16281f; --remove: #E58AAE; --remove-tint: #2b1a22;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      --shadow-lift: 0 2px 6px rgba(0,0,0,.35), 0 18px 40px rgba(0,0,0,.5);
+      --grid: rgba(236,234,242,.12);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#FBFAF8;--surface:#FFFFFF;--surface-2:#F5F3EF;--ink:#1C1B22;--muted:#6B6A78;--faint:#9C9AA6;
+    --line:#EAE7E1;--line-strong:#DED9D0;--accent:#5B5BD6;--accent-press:#4A4AC4;--accent-tint:#EEEEFB;
+    --add:#2F9E68;--add-tint:#E7F4EC;--remove:#C6537A;--remove-tint:#F9EAF0;--grid:rgba(28,27,34,.10);
+    --shadow:0 1px 2px rgba(28,27,34,.04),0 8px 24px rgba(28,27,34,.06);
+    --shadow-lift:0 2px 6px rgba(28,27,34,.06),0 18px 40px rgba(28,27,34,.12);
+  }
+  :root[data-theme="dark"] {
+    --ground:#151419;--surface:#1E1D24;--surface-2:#26242D;--ink:#ECEAF2;--muted:#A09EAC;--faint:#726F7E;
+    --line:#2C2A34;--line-strong:#383641;--accent:#8A8AF0;--accent-press:#9C9CF5;--accent-tint:#23223a;
+    --add:#5FCB92;--add-tint:#16281f;--remove:#E58AAE;--remove-tint:#2b1a22;--grid:rgba(236,234,242,.12);
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+    --shadow-lift:0 2px 6px rgba(0,0,0,.35),0 18px 40px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--ui);
+         line-height: 1.5; -webkit-font-smoothing: antialiased; font-feature-settings: "cv05","ss01"; }
+  ::selection { background: var(--accent-tint); }
+  button { font-family: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+  .topbar { display: flex; align-items: center; gap: 14px; padding: 12px clamp(16px, 4vw, 40px);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--ground) 86%, transparent); backdrop-filter: blur(10px); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 640; letter-spacing: -.01em; }
+  .brand svg { display: block; }
+  .brand .tag { color: var(--faint); font-weight: 500; font-size: 13px; letter-spacing: 0; }
+  .spacer { flex: 1; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted);
+    background: var(--surface-2); border: 1px solid var(--line); padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+  .chip svg { color: var(--add); }
+  .btn { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+    padding: 8px 14px; border-radius: 9px; font-size: 13.5px; font-weight: 550;
+    transition: background .15s, border-color .15s, transform .05s; }
+  .btn:hover { background: var(--surface-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-press); }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--ink); background: var(--surface-2); }
+  .icon-btn { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+  .icon-btn:hover { color: var(--ink); background: var(--surface-2); }
+
+  main { padding: clamp(16px, 3vw, 32px) clamp(16px, 4vw, 40px) 64px; }
+
+  .landing { max-width: 770px; margin: min(6vh, 60px) auto 0; }
+  .eyebrow { font-size: 12px; letter-spacing: .13em; text-transform: uppercase; color: var(--accent); font-weight: 640; margin-bottom: 16px; }
+  h1 { font-size: clamp(30px, 5.2vw, 46px); line-height: 1.06; letter-spacing: -.025em; margin: 0 0 16px; text-wrap: balance; font-weight: 700; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede { font-size: clamp(16px, 2.2vw, 18px); color: var(--muted); max-width: 60ch; margin: 0 0 32px; }
+  .dropzone { border: 1.5px dashed var(--line-strong); border-radius: 16px; background: var(--surface);
+    padding: 40px 28px; text-align: center; transition: border-color .18s, background .18s; }
+  .dropzone:hover { border-color: var(--accent); background: var(--accent-tint); }
+  .dz-title { font-weight: 620; font-size: 17px; margin: 12px 0 4px; letter-spacing: -.01em; }
+  .dz-sub { color: var(--faint); font-size: 13.5px; }
+  .dz-cloud { color: var(--accent); }
+  .or { display: flex; align-items: center; gap: 14px; color: var(--faint); font-size: 12.5px;
+    margin: 22px 0 14px; letter-spacing: .04em; text-transform: uppercase; }
+  .or::before, .or::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+  .samples { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .sample-btn { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+    padding: 9px 14px; border-radius: 10px; font-size: 13.5px; font-weight: 520;
+    display: inline-flex; align-items: center; gap: 8px; transition: border-color .15s, background .15s; }
+  .sample-btn:hover { border-color: var(--accent); background: var(--accent-tint); }
+  .sample-btn .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 40px; }
+  .how-step { display: flex; gap: 12px; align-items: flex-start; }
+  .how-num { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 600;
+    border: 1px solid var(--line); border-radius: 7px; padding: 2px 7px; margin-top: 1px; }
+  .how-t { font-weight: 600; font-size: 14px; }
+  .how-d { color: var(--muted); font-size: 13px; }
+  .trust-line { margin-top: 30px; color: var(--faint); font-size: 13px; display: flex; align-items: center; gap: 8px; justify-content: center; }
+
+  .workspace { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, .95fr); gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .workspace { grid-template-columns: 1fr; } }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .card + .card { margin-top: 20px; }
+  .card-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .card-head h2 { font-size: 13.5px; margin: 0; font-weight: 620; letter-spacing: -.005em; display: flex; align-items: baseline; gap: 8px; }
+  .card-head .file { font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-weight: 500; }
+  .card-head .count { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .pill { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 640; padding: 3px 8px; border-radius: 999px; }
+  .pill.preview { color: var(--accent); background: var(--accent-tint); }
+  .pill.output { color: var(--add); background: var(--add-tint); }
+  .pill.file { color: var(--muted); background: var(--surface-2); }
+
+  .join-hint { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 12px 0;
+    color: var(--faint); font-size: 12px; }
+  .join-hint .k { font-family: var(--mono); font-size: 11.5px; color: var(--accent); background: var(--accent-tint);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); padding: 1px 7px; border-radius: 5px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    position: sticky; top: 0; background: var(--surface); }
+  td { font-family: var(--mono); color: var(--ink); font-size: 12px; }
+  td.num, th.num { text-align: right; }
+  td.num { font-variant-numeric: tabular-nums; }
+  tr.more td { color: var(--faint); text-align: center; font-family: var(--ui); font-style: italic; }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.removed td { color: var(--remove); background: var(--remove-tint); text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--remove) 55%, transparent); }
+  tr.removed td.tagcell { text-decoration: none; }
+  .rm-tag { font-family: var(--ui); font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--remove); background: color-mix(in srgb, var(--remove) 14%, transparent);
+    padding: 1px 6px; border-radius: 5px; font-weight: 640; text-decoration: none; display: inline-block; }
+  th.added, td.added { background: var(--add-tint); }
+  th.added { color: var(--add); }
+  td.added { color: var(--add); font-weight: 600; }
+  th.keycol { color: var(--accent); background: var(--accent-tint); }
+  td.keycol { color: var(--accent); }
+  .added-flag { font-size: 10px; margin-left: 6px; color: var(--add); }
+  tr.collapsing td { animation: collapse .4s ease forwards; }
+  @keyframes collapse { to { opacity: 0; } }
+
+  .ribbon { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 12px 16px;
+    background: var(--surface-2); border-bottom: 1px solid var(--line); }
+  .metric { display: flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .metric .k { font-family: var(--ui); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+  .metric .from { color: var(--muted); }
+  .metric .arrow { color: var(--faint); }
+  .metric .to { color: var(--ink); font-weight: 620; }
+  .metric .delta { font-family: var(--ui); font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
+  .delta.rm { color: var(--remove); background: var(--remove-tint); }
+  .delta.add { color: var(--add); background: var(--add-tint); }
+  .delta.neutral { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+  .plain { padding: 11px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; gap: 9px; }
+  .plain b { color: var(--ink); font-weight: 600; }
+  .plain .spark { color: var(--accent); flex-shrink: 0; }
+  .actions { display: flex; align-items: center; gap: 10px; padding: 12px 16px; flex-wrap: wrap; }
+  .actions .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .untouched { font-size: 12px; color: var(--faint); display: inline-flex; align-items: center; gap: 6px; }
+
+  .chart-wrap { padding: 16px 16px 4px; }
+  #chartHost svg { width: 100%; height: auto; display: block; }
+  .chart-cap { padding: 2px 16px 14px; color: var(--faint); font-size: 11.5px; display: flex; align-items: center; gap: 7px; }
+  .chart-cap b { color: var(--muted); font-weight: 600; }
+  .chart-cap .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 640;
+    color: var(--accent); background: var(--accent-tint); padding: 1px 6px; border-radius: 5px; }
+
+  .assistant { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 78px; }
+  .assist-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+  .assist-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { font-size: 13.5px; }
+  .msg .who { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 620; margin-bottom: 5px; }
+  .suggest-label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .chips { display: flex; flex-direction: column; gap: 8px; }
+  .sugg { text-align: left; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+    padding: 9px 12px; border-radius: 9px; font-size: 13px; display: flex; align-items: center; gap: 9px;
+    transition: border-color .14s, background .14s, transform .05s; }
+  .sugg:hover { border-color: var(--accent); background: var(--accent-tint); }
+  .sugg:active { transform: translateY(1px); }
+  .sugg .glyph { color: var(--accent); flex-shrink: 0; display: inline-flex; }
+  .sugg .txt { flex: 1; }
+  .sugg .hint { font-size: 11px; color: var(--faint); font-style: italic; }
+  .sugg[disabled] { opacity: .5; pointer-events: none; }
+
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-item { display: flex; gap: 11px; padding: 2px 0; }
+  .tl-rail { display: flex; flex-direction: column; align-items: center; }
+  .tl-node { width: 20px; height: 20px; border-radius: 50%; background: var(--add-tint); color: var(--add);
+    display: grid; place-items: center; flex-shrink: 0; border: 1px solid color-mix(in srgb, var(--add) 30%, transparent); }
+  .tl-line { width: 1.5px; flex: 1; background: var(--line); margin: 3px 0; }
+  .tl-body { padding-bottom: 14px; }
+  .tl-t { font-size: 13px; font-weight: 560; }
+  .tl-n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .tl-appear { animation: spring .4s cubic-bezier(.2,.9,.3,1.2) both; }
+  @keyframes spring { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+
+  .composer { border-top: 1px solid var(--line); padding: 12px; display: flex; gap: 8px; align-items: flex-end; background: var(--surface); }
+  .composer textarea { flex: 1; resize: none; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--ground);
+    color: var(--ink); font-family: var(--ui); font-size: 13.5px; padding: 10px 12px; line-height: 1.45;
+    min-height: 42px; max-height: 120px; transition: border-color .15s; }
+  .composer textarea:focus { outline: none; border-color: var(--accent); }
+  .send { width: 40px; height: 42px; border-radius: 10px; border: none; background: var(--accent); color: #fff;
+    display: grid; place-items: center; flex-shrink: 0; }
+  .send:hover { background: var(--accent-press); }
+
+  .recipe-head { display: flex; align-items: center; gap: 10px; }
+  .recipe-head .rt { font-weight: 620; font-size: 13.5px; }
+  .disclose { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--accent); background: none; border: none; padding: 4px 0; }
+  .disclose svg { transition: transform .2s; }
+  .disclose.open svg { transform: rotate(90deg); }
+  .code { display: none; border-top: 1px solid var(--line); background: var(--surface-2); font-family: var(--mono);
+    font-size: 12px; line-height: 1.6; padding: 14px 16px; overflow-x: auto; color: var(--muted); }
+  .code.open { display: block; }
+  .code .kw { color: var(--accent); }
+  .code .fn { color: var(--add); }
+  .code .str { color: var(--remove); }
+  .code .cm { color: var(--faint); font-style: italic; }
+  .empty-note { color: var(--faint); font-size: 12.5px; padding: 4px 0; }
+
+  .scrim { position: fixed; inset: 0; background: rgba(20,19,25,.44); backdrop-filter: blur(3px);
+    opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 40; }
+  .scrim.show { opacity: 1; pointer-events: auto; }
+  .sheet { position: fixed; left: 50%; bottom: 0; transform: translate(-50%, 110%); width: min(440px, 94vw);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px 18px 0 0; box-shadow: var(--shadow-lift);
+    padding: 26px 26px 30px; z-index: 41; transition: transform .32s cubic-bezier(.2,.8,.25,1); }
+  .sheet.show { transform: translate(-50%, 0); }
+  .sheet h3 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
+  .sheet p { margin: 0 0 20px; color: var(--muted); font-size: 13.5px; }
+  .sso { display: flex; flex-direction: column; gap: 10px; }
+  .sso button { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px; border-radius: 10px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 550; }
+  .sso button:hover { background: var(--surface-2); }
+  .sso .divider { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 4px 0; }
+  .sso .divider::before, .sso .divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+  .sso input { padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--ground); color: var(--ink); font-size: 14px; font-family: var(--ui); }
+  .sheet .fine { margin: 16px 0 0; font-size: 11.5px; color: var(--faint); text-align: center; }
+  .sheet .close { position: absolute; top: 16px; right: 16px; }
+
+  .alias { border-bottom: 1px dashed var(--line-strong); cursor: text; outline: none; padding-bottom: 1px; font-weight: 620; }
+  .alias:hover, .alias:focus { border-bottom-color: var(--accent); }
+  .rename { color: var(--faint); background: none; border: none; padding: 2px; display: inline-flex; vertical-align: middle; border-radius: 5px; }
+  .rename:hover { color: var(--accent); background: var(--accent-tint); }
+  .rerun-note { margin-top: 20px; color: var(--muted); font-size: 12.5px; display: flex; gap: 10px; align-items: flex-start;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; }
+  .rerun-note b { color: var(--ink); font-weight: 600; }
+  .rerun-note em { font-style: normal; }
+  .rerun-note .rk { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+  .rerun-note svg { color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+
+  .linklike { background: none; border: none; color: var(--accent); font-size: 13px; font-weight: 560; padding: 4px; }
+  .linklike:hover { text-decoration: underline; }
+
+  .rerun { max-width: 900px; margin: 0 auto; }
+  .rr-title { font-size: clamp(20px, 3vw, 26px); font-weight: 700; letter-spacing: -.02em; }
+  .rr-sub { color: var(--faint); font-size: 13px; margin: 4px 0 24px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .rr-steps { display: inline-flex; gap: 6px; }
+  .rr-step { font-size: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--muted); }
+  .rr-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 640; margin: 0 0 10px; }
+  .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+  .params { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 680px) { .slots, .params { grid-template-columns: 1fr; } }
+  .slot { border: 1.5px solid color-mix(in srgb, var(--add) 40%, var(--line)); border-radius: 12px; padding: 14px; background: var(--surface); }
+  .slot-name { font-weight: 640; font-size: 14px; }
+  .slot-file { font-family: var(--mono); font-size: 12px; color: var(--ink); margin-top: 9px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .slot-file .doc { color: var(--accent); flex-shrink: 0; }
+  .matched { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--add); background: var(--add-tint); padding: 2px 7px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; }
+  .slot-expect { font-size: 11.5px; color: var(--faint); margin-top: 9px; }
+  .slot-expect code { font-family: var(--mono); color: var(--muted); }
+  .slot .relink { margin-top: 11px; font-size: 12px; color: var(--accent); background: none; border: none; padding: 0; }
+  .slot .relink:hover { text-decoration: underline; }
+  .param { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; }
+  .param label { display: block; font-size: 12.5px; font-weight: 560; margin-bottom: 8px; }
+  .param .help { color: var(--faint); font-weight: 400; }
+  .money-input { display: flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--ground); padding: 0 10px; }
+  .money-input > span { color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .money-input input, .param select { border: none; background: transparent; color: var(--ink); font-family: var(--ui); font-size: 14px; padding: 9px 6px; width: 100%; outline: none; }
+  .param select { border: 1px solid var(--line-strong); border-radius: 9px; background: var(--ground); padding: 9px 10px; }
+  .rr-run { display: flex; align-items: center; gap: 14px; margin: 22px 0; flex-wrap: wrap; }
+  .rr-note { color: var(--faint); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .rr-note b { color: var(--muted); }
+  .rr-note svg { color: var(--accent); }
+  .rr-result { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .flash { animation: flashbg .55s ease; }
+  @keyframes flashbg { 0% { background: var(--accent-tint); } 100% { background: transparent; } }
+
+  .hidden { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+</style>
+
+<div class="topbar">
+  <div class="brand">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" fill="var(--accent-tint)" stroke="var(--accent)" stroke-width="1.5"/>
+      <path d="M7 8.5h6M7 12h10M7 15.5h7" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="17.5" cy="8.5" r="1.4" fill="var(--accent)"/>
+    </svg>
+    <span>Data&nbsp;Recipes</span>
+    <span class="tag">workspace prototype</span>
+  </div>
+  <div class="spacer"></div>
+  <span class="chip">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 11V8a6 6 0 1112 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="4" y="11" width="16" height="9" rx="2" fill="currentColor" opacity=".18"/><rect x="4" y="11" width="16" height="9" rx="2" stroke="currentColor" stroke-width="2"/></svg>
+    Runs in your browser
+  </span>
+  <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle light and dark theme">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="btn" id="acctBtn">Set up account</button>
+</div>
+
+<main>
+  <section class="landing" id="landing">
+    <div class="eyebrow">For the spreadsheet you rebuild every month</div>
+    <h1>Describe it once. <em>Re-run it forever.</em></h1>
+    <p class="lede">Drop one or more CSV or Excel files and say what you need — join them, clean them up, summarize, even chart the result — in plain English. You get a reusable recipe that does the exact same thing to next month's files: same steps, same result, no formulas.</p>
+
+    <div class="dropzone" id="dropzone">
+      <svg class="dz-cloud" width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M7 18a4 4 0 01-.5-7.97A5.5 5.5 0 0117.9 9.2 3.5 3.5 0 0117 18H7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M12 10v6m0-6l-2.2 2.2M12 10l2.2 2.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="dz-title">Drop one or more CSV or Excel files — free, no account</div>
+      <div class="dz-sub">Everything runs in your browser. Your data never leaves this machine.</div>
+    </div>
+
+    <div class="or">or try it with sample files</div>
+    <div class="samples">
+      <button class="sample-btn"><span class="dot" style="background:var(--accent)"></span>Orders + customers (join)</button>
+      <button class="sample-btn"><span class="dot" style="background:var(--add)"></span>Messy customer list</button>
+      <button class="sample-btn"><span class="dot" style="background:var(--remove)"></span>Marketing signups</button>
+    </div>
+    <div style="text-align:center;margin-top:18px"><button class="linklike" id="rerunEntry">See how a saved recipe re-runs next month →</button></div>
+
+    <div class="how">
+      <div class="how-step"><span class="how-num">1</span><div><div class="how-t">Drop</div><div class="how-d">One or more files, parsed locally in seconds.</div></div></div>
+      <div class="how-step"><span class="how-num">2</span><div><div class="how-t">Describe</div><div class="how-d">Join, clean, summarize, chart — in plain words.</div></div></div>
+      <div class="how-step"><span class="how-num">3</span><div><div class="how-t">Reuse</div><div class="how-d">Save the recipe, re-run it monthly.</div></div></div>
+    </div>
+
+    <div class="trust-line">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      No accounts, no servers touching your data, no re-prompting next month.
+    </div>
+  </section>
+
+  <section class="workspace hidden" id="workspace">
+    <div class="data-col">
+      <div class="card">
+        <div class="card-head">
+          <h2><span class="alias" contenteditable="true" spellcheck="false">Orders</span>
+            <button class="rename" aria-label="Rename input" title="Rename input"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18 10l-4-4L4 16v4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.8"/></svg></button></h2>
+          <span class="file">from orders.csv</span><span class="count"> · 1,204 rows · 5 columns</span>
+          <div class="spacer"></div><button class="btn ghost" style="font-size:12.5px;padding:6px 10px">Replace</button>
+        </div>
+        <div class="table-wrap"><table id="ordersTable"></table></div>
+      </div>
+      <div class="join-hint">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 7a5 5 0 000 10M15 7a5 5 0 010 10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        shared key <span class="k">Customer ID</span> — joinable
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2><span class="alias" contenteditable="true" spellcheck="false">Customers</span>
+            <button class="rename" aria-label="Rename input" title="Rename input"><svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18 10l-4-4L4 16v4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.8"/></svg></button></h2>
+          <span class="file">from customers.csv</span><span class="count"> · 42 rows · 4 columns</span>
+          <div class="spacer"></div><button class="btn ghost" style="font-size:12.5px;padding:6px 10px">Replace</button>
+        </div>
+        <div class="table-wrap"><table id="customersTable"></table></div>
+      </div>
+
+      <div class="rerun-note">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.6 14a7 7 0 0011.8 2.4M18.4 10A7 7 0 006.6 7.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>These names identify each input on re-run. Next month, just drop files into <b>Orders</b> and <b>Customers</b> — I match them by name <em>and</em> columns, even if the filename changed (e.g. <span class="rk">orders_august.csv</span>).</span>
+      </div>
+
+      <div class="card hidden" id="outputCard">
+        <div class="card-head">
+          <h2 id="outputTitle">Output</h2>
+          <span class="pill output" id="outputPill">Result</span>
+          <div class="spacer"></div>
+          <span class="untouched">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+            Original files untouched
+          </span>
+        </div>
+        <div class="ribbon" id="ribbon"></div>
+        <div class="plain" id="plain"></div>
+        <div class="table-wrap"><table id="outputTable"></table></div>
+        <div class="actions" id="outputActions"></div>
+      </div>
+
+      <div class="card hidden" id="chartCard">
+        <div class="card-head">
+          <h2 id="chartTitle">Chart</h2>
+          <span class="pill output">Plot</span>
+          <div class="spacer"></div>
+          <button class="btn ghost" style="font-size:12.5px;padding:6px 10px" id="pngBtn">Download PNG</button>
+        </div>
+        <div class="chart-wrap"><div id="chartHost"></div></div>
+        <div class="chart-cap">
+          <span class="badge">Plotly.js</span>
+          <span>Rendered natively in the browser from a figure spec — interactive hover, zoom &amp; PNG export in the real app. <b>Static SVG stand-in shown here.</b></span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="assistant">
+      <div class="assist-card">
+        <div class="assist-body">
+          <div class="msg">
+            <div class="who">Recipe assistant</div>
+            <div class="bubble">Loaded <b>2 files</b> — orders.csv (1,204 rows) and customers.csv (42 rows). They share <b>Customer ID</b>, so I can join them. Then summarize or chart the result.</div>
+          </div>
+          <div>
+            <div class="suggest-label" style="margin-bottom:9px">Suggested for these files</div>
+            <div class="chips" id="chips"></div>
+          </div>
+          <div id="timelineWrap" class="hidden">
+            <div class="suggest-label" style="margin-bottom:10px">Recipe steps</div>
+            <div class="timeline" id="timeline"></div>
+          </div>
+        </div>
+        <div class="composer">
+          <textarea id="composer" rows="1" placeholder="Describe a step — join, clean, summarize, chart…" aria-label="Describe a step"></textarea>
+          <button class="send" id="sendBtn" aria-label="Generate">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12h15m0 0l-6-6m6 6l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="assist-card" id="recipeCard">
+        <div class="card-head" style="border:none">
+          <div class="recipe-head">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="16" height="18" rx="3" stroke="var(--muted)" stroke-width="1.6"/><path d="M8 8h8M8 12h8M8 16h5" stroke="var(--muted)" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <span class="rt">Recipe</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn primary" id="saveBtn" style="font-size:12.5px;padding:6px 12px" disabled>Save as recipe</button>
+        </div>
+        <div class="assist-body" style="padding-top:0">
+          <button class="disclose" id="discloseBtn" aria-expanded="false">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Show the steps
+          </button>
+          <div class="empty-note" id="recipeEmpty">No steps yet — describe what you need to build the recipe.</div>
+        </div>
+        <pre class="code" id="codePanel"></pre>
+      </div>
+    </aside>
+  </section>
+
+  <section class="rerun hidden" id="rerun">
+    <button class="btn ghost" id="rrBack" style="margin-bottom:16px;padding:6px 10px;font-size:13px">← Back</button>
+    <div class="rr-title">Monthly revenue by region</div>
+    <div class="rr-sub">
+      <span>Saved recipe · used 4 times · last run Jun 2026</span>
+      <span class="rr-steps"><span class="rr-step">Join</span><span class="rr-step">Filter</span><span class="rr-step">Summarize + chart</span></span>
+    </div>
+
+    <p class="rr-label">This month's files</p>
+    <div class="slots">
+      <div class="slot">
+        <div class="slot-name">Orders</div>
+        <div class="slot-file"><svg class="doc" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 3h8l4 4v14H6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>orders_2026-08.csv <span class="matched">✓ matched by columns</span></div>
+        <div class="slot-expect">Expects <code>Order ID · Customer ID · Amount · Date · Status</code> — 5 / 5 found</div>
+        <button class="relink">Use a different file</button>
+      </div>
+      <div class="slot">
+        <div class="slot-name">Customers</div>
+        <div class="slot-file"><svg class="doc" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 3h8l4 4v14H6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>customer_master.csv <span class="matched">✓ matched by columns</span></div>
+        <div class="slot-expect">Expects <code>Customer ID · Customer · Region · Segment</code> — 4 / 4 found</div>
+        <button class="relink">Use a different file</button>
+      </div>
+    </div>
+
+    <p class="rr-label">Parameters</p>
+    <div class="params">
+      <div class="param">
+        <label>Minimum order amount <span class="help">— orders below this are dropped</span></label>
+        <div class="money-input"><span>$</span><input type="number" id="pMin" value="100" min="0" step="50" aria-label="Minimum order amount"></div>
+      </div>
+      <div class="param">
+        <label>Group by <span class="help">— one row per group</span></label>
+        <select id="pGroup" aria-label="Group by"><option>Region</option><option>Segment</option></select>
+      </div>
+    </div>
+
+    <div class="rr-run">
+      <button class="btn primary" id="rrRun">Run recipe</button>
+      <span class="rr-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M13 3L4 14h7l-2 7 9-11h-7l2-7z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Tweaks re-run <b>in your browser</b> — instant, 0 tokens, same steps.</span>
+    </div>
+
+    <div class="rr-result hidden" id="rrResult">
+      <div class="ribbon" id="rrRibbon"></div>
+      <div class="table-wrap"><table id="rrTable"></table></div>
+      <div class="card-head" style="border-top:1px solid var(--line);border-bottom:none">
+        <h2 id="rrChartTitle">Chart</h2><span class="pill output">Plot</span>
+        <div class="spacer"></div><button class="btn ghost" style="font-size:12.5px;padding:6px 10px" id="rrPng">Download PNG</button>
+      </div>
+      <div class="chart-wrap"><div id="rrChartHost"></div></div>
+      <div class="chart-cap"><span class="badge">Plotly.js</span><span>Rendered from the figure spec — <b>static SVG stand-in shown here.</b></span></div>
+      <div class="actions" style="border-top:1px solid var(--line)">
+        <button class="btn primary" id="rrDl">Download CSV</button>
+        <div class="right"><span class="untouched">Ran locally · original files untouched</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <button class="icon-btn close" id="sheetClose" aria-label="Close">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+  <h3 id="sheetTitle">Nice — your recipe's ready.</h3>
+  <p>Create a free account to save it and re-run it on next month's files. Your work so far comes with you.</p>
+  <div class="sso">
+    <button><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.5 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.9a5 5 0 01-2.2 3.3v2.7h3.5c2-1.9 3.3-4.7 3.3-7.8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.5-2.7c-1 .7-2.3 1.1-3.8 1.1-2.9 0-5.3-1.9-6.2-4.5H2.2v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 010-4.2V7.2H2.2a11 11 0 000 9.9l3.6-2.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3 .6 4.2 1.6l3.1-3.1A11 11 0 002.2 7.2l3.6 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>Continue with Google</button>
+    <button><svg width="16" height="16" viewBox="0 0 24 24"><path fill="#F25022" d="M2 2h9.5v9.5H2z"/><path fill="#7FBA00" d="M12.5 2H22v9.5h-9.5z"/><path fill="#00A4EF" d="M2 12.5h9.5V22H2z"/><path fill="#FFB900" d="M12.5 12.5H22V22h-9.5z"/></svg>Continue with Microsoft</button>
+    <div class="divider">or</div>
+    <input type="email" placeholder="you@company.com" aria-label="Email address" />
+    <button class="primary" style="background:var(--accent);color:#fff;border-color:var(--accent)">Email me a magic link</button>
+  </div>
+  <p class="fine">No password. We only email you a sign-in link.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var root = document.documentElement;
+  var $ = function (id) { return document.getElementById(id); };
+
+  $("themeBtn").addEventListener("click", function () {
+    var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var cur = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    root.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+  });
+
+  // ---------- two input files ----------
+  var ORDER_COLS = ["Order ID", "Customer ID", "Amount", "Date", "Status"];
+  var CUST_COLS = ["Customer ID", "Customer", "Region", "Segment"];
+  var NUM_COLS = { "Amount": 1, "Orders": 1, "Total Revenue": 1 };
+  var ORDERS_TOTAL = 1204, CUST_TOTAL = 42;
+  var orders = [
+    { id:"o1","Order ID":"10432","Customer ID":"C-018",Amount:"$248.00",Date:"2026-06-03",Status:"paid" },
+    { id:"o2","Order ID":"10433","Customer ID":"C-114",Amount:"$76.50",Date:"2026-06-04",Status:"paid" },
+    { id:"o3","Order ID":"10435","Customer ID":"C-007",Amount:"$1,120.00",Date:"2026-06-05",Status:"paid" },
+    { id:"o4","Order ID":"10436","Customer ID":"C-052",Amount:"$42.00",Date:"2026-06-05",Status:"refunded" },
+    { id:"o5","Order ID":"10437","Customer ID":"C-018",Amount:"$305.75",Date:"2026-06-06",Status:"paid" },
+    { id:"o6","Order ID":"10439","Customer ID":"C-114",Amount:"$89.99",Date:"2026-06-07",Status:"paid" }
+  ];
+  var customers = [
+    { "Customer ID":"C-007",Customer:"Cedar & Co",Region:"West",Segment:"Enterprise" },
+    { "Customer ID":"C-018",Customer:"Acme Corp",Region:"East",Segment:"Mid-Market" },
+    { "Customer ID":"C-052",Customer:"Delta Foods",Region:"Central",Segment:"SMB" },
+    { "Customer ID":"C-114",Customer:"Bluebird LLC",Region:"East",Segment:"SMB" },
+    { "Customer ID":"C-205",Customer:"Evergreen",Region:"West",Segment:"Mid-Market" },
+    { "Customer ID":"C-330",Customer:"Golden Gate",Region:"West",Segment:"Enterprise" }
+  ];
+  var CUST_LOOKUP = {}; customers.forEach(function (c) { CUST_LOOKUP[c["Customer ID"]] = c; });
+  var MERGED_COLS = ORDER_COLS.concat(["Customer", "Region", "Segment"]);
+  function parseAmt(s) { return parseFloat(String(s).replace(/[$,\s]/g, "")); }
+  function money(n) { return "$" + Math.round(n).toLocaleString(); }
+
+  // full-dataset region summary (aggregation collapses all 1,204 orders)
+  var REGION_ROWS = [
+    { id:"r1", Region:"East",    Orders:"512", "Total Revenue":"$128,400" },
+    { id:"r2", Region:"West",    Orders:"388", "Total Revenue":"$203,750" },
+    { id:"r3", Region:"Central", Orders:"201", "Total Revenue":"$54,900" },
+    { id:"r4", Region:"South",   Orders:"103", "Total Revenue":"$31,200" }
+  ];
+  var REGION_PLOT = { title: "Total revenue by region",
+    labels: ["East", "West", "Central", "South"], values: [128400, 203750, 54900, 31200] };
+
+  // ---------- steps ----------
+  var JOIN = {
+    key: "join", mode: "join", glyph: "join",
+    label: "Join orders + customers on Customer ID",
+    chip: "Join orders to customers on Customer ID",
+    addedCols: ["Customer", "Region", "Segment"],
+    apply: function () {
+      var rows = orders.map(function (o) {
+        var c = CUST_LOOKUP[o["Customer ID"]] || {};
+        var m = {}; for (var k in o) m[k] = o[k];
+        m.Customer = c.Customer || "—"; m.Region = c.Region || "—"; m.Segment = c.Segment || "—";
+        return m;
+      });
+      return { rows: rows, cols: MERGED_COLS, total: ORDERS_TOTAL };
+    },
+    plain: function () { return 'Joined <b>1,204 orders</b> to <b>42 customers</b> on Customer ID — matched 100%, and added Customer, Region and Segment to every order.'; }
+  };
+  var FILTER = {
+    key: "filter", mode: "filter", glyph: "filter", requires: "join",
+    label: "Keep only orders over $100",
+    chip: "Keep only orders over $100",
+    apply: function (tbl) {
+      var rows = tbl.rows.filter(function (r) { return parseAmt(r.Amount) > 100; });
+      return { rows: rows, cols: tbl.cols, total: 892 };
+    },
+    plain: function () { return 'Removed <b>312 rows</b> for orders of $100 or less. Nothing else changed.'; }
+  };
+  var REGION = {
+    key: "region", mode: "reshape", glyph: "chart", requires: "join",
+    label: "Summarize total revenue by region",
+    chip: "Summarize total revenue by region",
+    columns: ["Region", "Orders", "Total Revenue"], addedCols: ["Orders", "Total Revenue"],
+    plot: REGION_PLOT,
+    apply: function () { return { rows: REGION_ROWS, cols: ["Region", "Orders", "Total Revenue"], total: 4 }; },
+    plain: function (prev) { return 'Grouped <b>' + prev.toLocaleString() + ' orders</b> into <b>4 regions</b> with their order count and total revenue, and drew a bar chart.'; }
+  };
+  var ALL_STEPS = [JOIN, REGION, FILTER];
+
+  // ---------- state ----------
+  var applied = [], pending = null;
+  function has(k) { return applied.some(function (s) { return s.key === k; }); }
+  function joined() { return has("join"); }
+  function committedTable() {
+    if (!joined()) return null;
+    var tbl = JOIN.apply();
+    applied.forEach(function (s) { if (s.key !== "join") tbl = s.apply(tbl); });
+    return tbl;
+  }
+  function committedTotal() { var t = committedTable(); return t ? t.total : ORDERS_TOTAL; }
+  function committedPlot() { return has("region") ? REGION.plot : null; }
+
+  function glyphSVG(kind) {
+    if (kind === "join") return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 7a5 5 0 000 10M15 7a5 5 0 010 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    if (kind === "chart") return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 20V10M12 20V4M19 20v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    if (kind === "check") return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  }
+
+  function renderTable(el, rows, opts) {
+    opts = opts || {};
+    var cols = opts.columns || ORDER_COLS;
+    var added = {}; (opts.added || []).forEach(function (c) { added[c] = true; });
+    var key = opts.keyCol;
+    var html = "<thead><tr>";
+    cols.forEach(function (c) {
+      var cls = (added[c] ? "added " : (c === key ? "keycol " : "")) + (NUM_COLS[c] ? "num" : "");
+      html += '<th class="' + cls + '">' + c + (added[c] ? '<span class="added-flag">new</span>' : "") + "</th>";
+    });
+    if (opts.showTag) html += "<th></th>";
+    html += "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      var rm = opts.removed && opts.removed[r.id];
+      html += '<tr class="' + (rm ? "removed" : "") + '">';
+      cols.forEach(function (c) {
+        var v = (r[c] === undefined || r[c] === "") ? "—" : r[c];
+        var cls = (NUM_COLS[c] ? "num " : "") + (added[c] ? "added" : (c === key ? "keycol" : ""));
+        html += '<td class="' + cls + '">' + v + "</td>";
+      });
+      if (opts.showTag) html += '<td class="tagcell">' + (rm ? '<span class="rm-tag">removed</span>' : "") + "</td>";
+      html += "</tr>";
+    });
+    var moreN = (opts.total || rows.length) - rows.length;
+    var span = cols.length + (opts.showTag ? 1 : 0);
+    if (moreN > 0) html += '<tr class="more"><td colspan="' + span + '">＋ ' + moreN.toLocaleString() + " more rows</td></tr>";
+    html += "</tbody>";
+    el.innerHTML = html;
+  }
+
+  function tween(el, from, to) {
+    if (reduce || from === to) { el.textContent = to.toLocaleString(); return; }
+    var start = performance.now(), dur = 650;
+    function frame(t) {
+      var p = Math.min(1, (t - start) / dur), e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(from + (to - from) * e).toLocaleString();
+      if (p < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- SVG bar chart (Plotly.js stand-in) ----------
+  function niceCeil(v) { var p = Math.pow(10, Math.floor(Math.log10(v))); var f = v / p; var nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10; return nf * p; }
+  function fmtK(v) { return v >= 1000 ? "$" + Math.round(v / 1000) + "k" : "$" + v; }
+  function buildBarSVG(plot) {
+    var W = 700, H = 300, pl = 62, pr = 18, pt = 26, pb = 42;
+    var iw = W - pl - pr, ih = H - pt - pb;
+    var max = niceCeil(Math.max.apply(null, plot.values)) || 1;
+    var n = plot.values.length, band = iw / n, bw = Math.min(84, band * 0.56);
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + plot.title + '" font-family="var(--ui)">';
+    for (var i = 0; i <= 4; i++) {
+      var yv = max * i / 4, y = pt + ih - (yv / max) * ih;
+      s += '<line x1="' + pl + '" y1="' + y + '" x2="' + (W - pr) + '" y2="' + y + '" stroke="var(--grid)" stroke-width="1"/>';
+      s += '<text x="' + (pl - 10) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="var(--faint)">' + fmtK(yv) + '</text>';
+    }
+    plot.values.forEach(function (v, k) {
+      var bh = (v / max) * ih, x = pl + band * k + (band - bw) / 2, y = pt + ih - bh;
+      s += '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="4" fill="var(--accent)"/>';
+      s += '<text x="' + (x + bw / 2) + '" y="' + (y - 8) + '" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--ink)">' + fmtK(v) + '</text>';
+      s += '<text x="' + (x + bw / 2) + '" y="' + (pt + ih + 20) + '" text-anchor="middle" font-size="12" fill="var(--muted)">' + plot.labels[k] + '</text>';
+    });
+    s += '<line x1="' + pl + '" y1="' + (pt + ih) + '" x2="' + (W - pr) + '" y2="' + (pt + ih) + '" stroke="var(--line-strong)" stroke-width="1"/></svg>';
+    return s;
+  }
+  function renderChart(plot) {
+    if (!plot) { $("chartCard").classList.add("hidden"); return; }
+    $("chartCard").classList.remove("hidden");
+    $("chartTitle").textContent = "Chart · " + plot.title;
+    $("chartHost").innerHTML = buildBarSVG(plot);
+  }
+
+  // ---------- render pieces ----------
+  function renderInputs() {
+    renderTable($("ordersTable"), orders, { columns: ORDER_COLS, total: ORDERS_TOTAL, keyCol: "Customer ID" });
+    renderTable($("customersTable"), customers, { columns: CUST_COLS, total: CUST_TOTAL, keyCol: "Customer ID" });
+  }
+
+  function renderChips() {
+    var wrap = $("chips"); wrap.innerHTML = "";
+    ALL_STEPS.forEach(function (s) {
+      var done = has(s.key);
+      var gated = s.requires && !has(s.requires);
+      var b = document.createElement("button");
+      b.className = "sugg";
+      if (done || gated) b.setAttribute("disabled", "");
+      b.innerHTML = '<span class="glyph">' + glyphSVG(s.glyph) + '</span><span class="txt">' + s.chip + (done ? " ✓" : "") + "</span>" +
+        (gated ? '<span class="hint">after joining</span>' : "");
+      b.addEventListener("click", function () { stage(s); });
+      wrap.appendChild(b);
+    });
+  }
+
+  function renderTimeline() {
+    var wrap = $("timelineWrap"), tl = $("timeline");
+    if (!applied.length) { wrap.classList.add("hidden"); return; }
+    wrap.classList.remove("hidden"); tl.innerHTML = "";
+    applied.forEach(function (s, i) {
+      var item = document.createElement("div");
+      item.className = "tl-item" + (s._new ? " tl-appear" : ""); s._new = false;
+      var last = i === applied.length - 1;
+      var meta = "step " + (i + 1) + " · " + s._total.toLocaleString() + " rows" + (s.plot ? " + chart" : "");
+      item.innerHTML = '<div class="tl-rail"><div class="tl-node">' + glyphSVG("check") + "</div>" +
+        (last ? "" : '<div class="tl-line"></div>') + "</div>" +
+        '<div class="tl-body"><div class="tl-t">' + s.label + '</div><div class="tl-n">' + meta + "</div></div>";
+      tl.appendChild(item);
+    });
+  }
+
+  function renderRecipe() {
+    var save = $("saveBtn"), empty = $("recipeEmpty"), code = $("codePanel");
+    if (!applied.length) { save.setAttribute("disabled", ""); empty.classList.remove("hidden"); code.innerHTML = ""; return; }
+    save.removeAttribute("disabled"); empty.classList.add("hidden");
+    var S = '<span class="kw">import</span> pandas <span class="kw">as</span> pd\n\n' +
+      '<span class="kw">def</span> <span class="fn">transform</span>(inputs: dict[str, pd.DataFrame]) -> dict:\n' +
+      '    orders    = inputs[<span class="str">"orders.csv"</span>]\n' +
+      '    customers = inputs[<span class="str">"customers.csv"</span>]\n';
+    if (has("join")) S += '\n    <span class="cm"># join each order to its customer record</span>\n' +
+      '    df = orders.merge(customers, on=<span class="str">"Customer ID"</span>, how=<span class="str">"left"</span>)\n';
+    if (has("filter")) S += '\n    <span class="cm"># keep only orders over $100</span>\n' +
+      '    df[<span class="str">"Amount"</span>] = df[<span class="str">"Amount"</span>].replace(<span class="str">r"[$,]"</span>, <span class="str">""</span>, regex=True).astype(float)\n' +
+      '    df = df[df[<span class="str">"Amount"</span>] > <span class="str">100</span>]\n';
+    if (has("region")) S += '\n    <span class="cm"># one row per region: order count + total revenue</span>\n' +
+      '    by_region = df.groupby(<span class="str">"Region"</span>, as_index=False).agg(\n' +
+      '        Orders=(<span class="str">"Order ID"</span>, <span class="str">"count"</span>),\n' +
+      '        <span class="str">**{"Total Revenue"</span>: (<span class="str">"Amount"</span>, <span class="str">"sum")}</span>)\n' +
+      '    chart = <span class="fn">plot_bar</span>(by_region[<span class="str">"Region"</span>], by_region[<span class="str">"Total Revenue"</span>],\n' +
+      '                     title=<span class="str">"Total revenue by region"</span>)\n';
+    if (has("region")) S += '\n    <span class="kw">return</span> {<span class="str">"tables"</span>: {<span class="str">"By region"</span>: by_region}, <span class="str">"plots"</span>: {<span class="str">"Revenue"</span>: chart}}';
+    else S += '\n    <span class="kw">return</span> {<span class="str">"tables"</span>: {<span class="str">"result"</span>: df}, <span class="str">"plots"</span>: {}}';
+    code.innerHTML = S;
+  }
+
+  // ---------- staging / apply ----------
+  function stage(step) {
+    if (has(step.key) || (step.requires && !has(step.requires))) return;
+    pending = step;
+    var prev = committedTable();
+    var prevTotal = prev ? prev.total : ORDERS_TOTAL;
+    var prevCols = prev ? prev.cols : ORDER_COLS;
+    var nt = step.apply(prev);
+
+    $("outputCard").classList.remove("hidden");
+    $("outputTitle").textContent = "Preview";
+    var pill = $("outputPill"); pill.textContent = "Not yet applied"; pill.className = "pill preview";
+
+    var displayRows, displayCols, removed = {}, removedCount = 0, addedSet = [], footTotal, keyCol = null;
+    var colsIn = prevCols.length, colsOut, rowNote, colNote = null;
+
+    if (step.mode === "join") {
+      displayRows = nt.rows; displayCols = nt.cols; addedSet = step.addedCols; footTotal = nt.total; keyCol = "Customer ID";
+      colsIn = ORDER_COLS.length; colsOut = nt.cols.length;
+      rowNote = '<span class="delta neutral">100% matched</span>';
+      colNote = { cls: "add", txt: "+ " + step.addedCols.join(", ") };
+    } else if (step.mode === "filter") {
+      var keep = {}; nt.rows.forEach(function (r) { keep[r.id] = true; });
+      prev.rows.forEach(function (r) { if (!keep[r.id]) { removed[r.id] = true; removedCount++; } });
+      displayRows = prev.rows; displayCols = prevCols; footTotal = prevTotal; colsOut = colsIn;
+      rowNote = '<span class="delta rm">−' + (prevTotal - nt.total).toLocaleString() + "</span>";
+    } else { // reshape
+      displayRows = nt.rows; displayCols = step.columns; addedSet = step.addedCols; footTotal = nt.total;
+      colsOut = step.columns.length; rowNote = '<span class="delta rm">−' + (prevTotal - nt.total).toLocaleString() + "</span>";
+      colNote = { cls: "neutral", txt: "restructured" };
+    }
+
+    $("ribbon").innerHTML =
+      '<div class="metric"><span class="k">Rows</span><span class="from">' + prevTotal.toLocaleString() +
+        '</span><span class="arrow">→</span><span class="to" id="rowTo">' + prevTotal.toLocaleString() + "</span>" + rowNote + "</div>" +
+      '<div class="metric"><span class="k">Columns</span><span class="from">' + colsIn + '</span><span class="arrow">→</span><span class="to">' + colsOut + "</span>" +
+        (colNote ? '<span class="delta ' + colNote.cls + '">' + colNote.txt + "</span>" : "") + "</div>";
+    tween($("rowTo"), prevTotal, nt.total);
+
+    $("plain").innerHTML = '<span class="spark">✦</span><span>' + step.plain(prevTotal) + "</span>";
+    renderTable($("outputTable"), displayRows, { columns: displayCols, removed: removed, added: addedSet, showTag: removedCount > 0, total: footTotal, keyCol: keyCol });
+    renderChart(step.plot || committedPlot());
+
+    $("outputActions").innerHTML =
+      '<button class="btn primary" id="applyBtn">Apply step</button>' +
+      '<button class="btn" id="refineBtn">Not quite — refine</button>' +
+      '<div class="right"><span class="untouched">Preview only · nothing saved yet</span></div>';
+    $("applyBtn").addEventListener("click", applyPending);
+    $("refineBtn").addEventListener("click", function () {
+      pending = null;
+      if (!applied.length) { $("outputCard").classList.add("hidden"); renderChart(null); } else renderCommitted();
+      $("composer").focus();
+    });
+  }
+
+  function applyPending() {
+    if (!pending) return;
+    var step = pending;
+    var prev = committedTable();
+    step._prev = prev ? prev.total : ORDERS_TOTAL;
+    step._total = step.apply(prev).total;
+    var rows = document.querySelectorAll("#outputTable tr.removed");
+    if (!reduce && rows.length) {
+      Array.prototype.forEach.call(rows, function (tr) { tr.classList.add("collapsing"); });
+      setTimeout(commit, 380);
+    } else { commit(); }
+    function commit() {
+      step._new = true; applied.push(step); pending = null;
+      renderCommitted(); renderChips(); renderTimeline(); renderRecipe();
+    }
+  }
+
+  function renderCommitted() {
+    if (!applied.length) { $("outputCard").classList.add("hidden"); renderChart(null); return; }
+    $("outputCard").classList.remove("hidden");
+    $("outputTitle").textContent = "Output";
+    var pill = $("outputPill"); pill.textContent = "Applied"; pill.className = "pill output";
+
+    var tbl = committedTable(), last = applied[applied.length - 1];
+    var colsFrom = ORDER_COLS.length, colsTo = tbl.cols.length, total = tbl.total;
+    var colNote = null;
+    if (has("region")) colNote = { cls: "neutral", txt: "restructured" };
+    else if (colsTo > colsFrom) colNote = { cls: "add", txt: "+ " + tbl.cols.slice(colsFrom).join(", ") };
+    var rowNote = total < ORDERS_TOTAL ? '<span class="delta rm">−' + (ORDERS_TOTAL - total).toLocaleString() + "</span>"
+                : (has("join") && !has("filter") && !has("region")) ? '<span class="delta neutral">100% matched</span>' : "";
+
+    $("ribbon").innerHTML =
+      '<div class="metric"><span class="k">Rows</span><span class="from">' + ORDERS_TOTAL.toLocaleString() +
+        '</span><span class="arrow">→</span><span class="to">' + total.toLocaleString() + "</span>" + rowNote + "</div>" +
+      '<div class="metric"><span class="k">Columns</span><span class="from">' + colsFrom + '</span><span class="arrow">→</span><span class="to">' + colsTo + "</span>" +
+        (colNote ? '<span class="delta ' + colNote.cls + '">' + colNote.txt + "</span>" : "") + "</div>";
+
+    $("plain").innerHTML = '<span class="spark">✓</span><span>' + last.plain(last._prev) + "</span>";
+    var addedSet = (last.mode === "reshape" || last.mode === "join") ? last.addedCols : [];
+    renderTable($("outputTable"), tbl.rows, { columns: tbl.cols, added: addedSet, total: total, keyCol: has("region") ? null : "Customer ID" });
+    renderChart(committedPlot());
+
+    $("outputActions").innerHTML =
+      '<button class="btn primary" id="dlBtn">Download CSV</button>' +
+      '<button class="btn" id="moreBtn">Add another step</button>' +
+      '<div class="right"><span class="untouched">' +
+        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>' +
+        'Original files untouched</span></div>';
+    $("moreBtn").addEventListener("click", function () { $("composer").focus(); });
+    $("dlBtn").addEventListener("click", function () { openSheet("Download without an account, or save the recipe to reuse it next month."); });
+  }
+
+  // ---------- composer ----------
+  function handleSend() {
+    var ta = $("composer"), txt = ta.value.trim().toLowerCase(), pick = null;
+    if (/join|merge|combin|vlookup|lookup/.test(txt)) pick = JOIN;
+    else if (/region|summar|revenue|chart|plot|graph|total|by region/.test(txt)) pick = REGION;
+    else if (/over|100|filter|keep|clean|remove/.test(txt)) pick = FILTER;
+    function avail(s) { return !has(s.key) && !(s.requires && !has(s.requires)); }
+    if (!pick || !avail(pick)) { pick = null; for (var i = 0; i < ALL_STEPS.length; i++) { if (avail(ALL_STEPS[i])) { pick = ALL_STEPS[i]; break; } } }
+    if (!pick) return;
+    ta.value = ""; autosize(ta); stage(pick);
+  }
+  function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.min(120, ta.scrollHeight) + "px"; }
+  $("composer").addEventListener("input", function () { autosize(this); });
+  $("composer").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } });
+  $("sendBtn").addEventListener("click", handleSend);
+
+  $("discloseBtn").addEventListener("click", function () {
+    var open = $("codePanel").classList.toggle("open");
+    this.classList.toggle("open", open);
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+    this.lastChild.textContent = open ? " Hide the steps" : " Show the steps";
+  });
+
+  function openSheet(msg) { if (msg) $("sheet").querySelector("p").textContent = msg; $("scrim").classList.add("show"); $("sheet").classList.add("show"); }
+  function closeSheet() { $("scrim").classList.remove("show"); $("sheet").classList.remove("show"); }
+  $("saveBtn").addEventListener("click", function () { openSheet("Create a free account to save it and re-run it on next month's files. Your work so far comes with you."); });
+  $("acctBtn").addEventListener("click", function () { openSheet("Sign in to sync your recipes and use them on any device."); });
+  $("pngBtn").addEventListener("click", function () { openSheet("Download the chart (PNG) without an account, or save the recipe to reuse it next month."); });
+  $("scrim").addEventListener("click", closeSheet);
+  $("sheetClose").addEventListener("click", closeSheet);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeSheet(); });
+
+  function enterWorkspace() {
+    $("landing").classList.add("hidden");
+    $("workspace").classList.remove("hidden");
+    renderInputs(); renderChips(); renderRecipe();
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  }
+  $("dropzone").addEventListener("click", enterWorkspace);
+  Array.prototype.forEach.call(document.querySelectorAll(".sample-btn"), function (b) { b.addEventListener("click", enterWorkspace); });
+
+  // rename buttons focus the editable input alias
+  Array.prototype.forEach.call(document.querySelectorAll(".rename"), function (b) {
+    b.addEventListener("click", function () {
+      var a = this.parentNode.querySelector(".alias");
+      a.focus();
+      var r = document.createRange(); r.selectNodeContents(a); r.collapse(false);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    });
+  });
+
+  // ---------- re-run screen (named slots + live parameters) ----------
+  var REGIONS_M = ["East", "West", "Central", "South"], SEGS_M = ["Enterprise", "Mid-Market", "SMB"];
+  var thisMonth = [];
+  for (var _i = 0; _i < 1187; _i++) {
+    var _r = (_i % 10 < 4) ? "East" : (_i % 10 < 7) ? "West" : (_i % 10 < 9) ? "Central" : "South";
+    var _s = (_i % 3 === 0) ? "Enterprise" : (_i % 3 === 1) ? "Mid-Market" : "SMB";
+    thisMonth.push({ region: _r, segment: _s, amount: 30 + ((_i * 53) % 2470) });
+  }
+  var rerunParams = { min: 100, group: "Region" };
+
+  function computeRerun() {
+    var min = rerunParams.min, key = rerunParams.group === "Region" ? "region" : "segment";
+    var order = rerunParams.group === "Region" ? REGIONS_M : SEGS_M;
+    var g = {}; order.forEach(function (k) { g[k] = { n: 0, sum: 0 }; });
+    var kept = 0;
+    thisMonth.forEach(function (o) { if (o.amount >= min) { kept++; g[o[key]].n++; g[o[key]].sum += o.amount; } });
+    var groups = order.filter(function (k) { return g[k].n > 0; }).sort(function (a, b) { return g[b].sum - g[a].sum; });
+    var rows = groups.map(function (k) { var row = { id: k, Orders: g[k].n.toLocaleString() }; row[rerunParams.group] = k; row["Total Revenue"] = money(g[k].sum); return row; });
+    return { rows: rows, kept: kept, cols: [rerunParams.group, "Orders", "Total Revenue"],
+      plot: { title: "Total revenue by " + rerunParams.group.toLowerCase(), labels: groups, values: groups.map(function (k) { return g[k].sum; }) } };
+  }
+
+  function renderRerunResult() {
+    var res = computeRerun();
+    $("rrResult").classList.remove("hidden");
+    $("rrRibbon").innerHTML =
+      '<div class="metric"><span class="k">Orders kept</span><span class="to">' + res.kept.toLocaleString() + '</span><span class="from">of 1,187</span></div>' +
+      '<div class="metric"><span class="k">Groups</span><span class="to">' + res.rows.length + '</span><span class="from">by ' + rerunParams.group + '</span></div>';
+    renderTable($("rrTable"), res.rows, { columns: res.cols, added: ["Orders", "Total Revenue"], total: res.rows.length });
+    $("rrChartTitle").textContent = "Chart · " + res.plot.title;
+    $("rrChartHost").innerHTML = buildBarSVG(res.plot);
+  }
+  function rerunFlash() {
+    if (reduce) return;
+    [$("rrTable"), $("rrChartHost")].forEach(function (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); });
+  }
+
+  function showRerun() {
+    $("landing").classList.add("hidden"); $("workspace").classList.add("hidden"); $("rerun").classList.remove("hidden");
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  }
+  $("rerunEntry").addEventListener("click", showRerun);
+  $("rrBack").addEventListener("click", function () { $("rerun").classList.add("hidden"); $("landing").classList.remove("hidden"); });
+  $("rrRun").addEventListener("click", renderRerunResult);
+  $("pMin").addEventListener("input", function () { rerunParams.min = parseInt(this.value || "0", 10) || 0; if (!$("rrResult").classList.contains("hidden")) { renderRerunResult(); rerunFlash(); } });
+  $("pGroup").addEventListener("change", function () { rerunParams.group = this.value; if (!$("rrResult").classList.contains("hidden")) { renderRerunResult(); rerunFlash(); } });
+  $("rrDl").addEventListener("click", function () { rerunFlash(); });
+  $("rrPng").addEventListener("click", function () { rerunFlash(); });
+
+  // dev-only preview hook (never fires on the published https artifact)
+  if (location.protocol === "file:" && location.hash) {
+    var h = location.hash;
+    if (/dark/.test(h)) { var st = document.createElement("style"); st.textContent = "*{transition:none!important}"; document.head.appendChild(st); root.setAttribute("data-theme", "dark"); }
+    reduce = true;
+    if (/rerun/.test(h)) {
+      showRerun();
+      if (/seg/.test(h)) { rerunParams.group = "Segment"; $("pGroup").value = "Segment"; }
+      if (/hi/.test(h)) { rerunParams.min = 1500; $("pMin").value = 1500; }
+      renderRerunResult();
+    }
+    else {
+      enterWorkspace();
+      if (/join(?!ed)/.test(h)) stage(JOIN);
+      if (/joined/.test(h)) { stage(JOIN); applyPending(); }
+      if (/region/.test(h)) { stage(JOIN); applyPending(); stage(REGION); }
+      if (/chart|full/.test(h)) { stage(JOIN); applyPending(); stage(REGION); applyPending(); }
+    }
+  }
+})();
+</script>
