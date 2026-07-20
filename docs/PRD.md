@@ -78,17 +78,27 @@ The company holds one Anthropic key server-side; the browser never sees it. A `/
 - **teams** (id, name) + **team_members** (team_id, user_id, role); recipes gain optional team_id
 - **usage_credits** (owner_id, period, generations_used, tokens_used, plan)
 
-### 2.4 Execution model — HYBRID (the pivotal decision)
-- **Client path (default, all tiers):** the generated script runs in-browser via Pyodide. File contents never leave the machine. Covers interactive use, ad-hoc re-runs, files within WASM memory (~≤50–100 MB). This is the privacy moat and it's free compute (great margin).
-- **Server path (premium only, explicit opt-in):** runs the same script in a sandboxed, network-isolated, resource-capped server worker. Unlocks scheduling, files too big for the browser, and connector-sourced data. **Requires** file data to transit and briefly reside server-side.
+### 2.4 Execution model — client-side only (v1)
+**All recipe execution runs in the browser via Pyodide. The backend never runs user-generated code.** This is a deliberate security decision (confirmed for v1): executing LLM-authored pandas server-side is a real attack surface — sandbox escape, resource abuse, data exfiltration — for little near-term gain. Client-side execution is also the privacy moat (file contents never leave the machine) and free compute.
+- Covers interactive use, ad-hoc re-runs, **multi-file joins, parameters, and Plotly plotting** — all in Pyodide / Plotly.js. Files within WASM memory (~≤50–100 MB).
+- **Deferred (and re-evaluated on security merits before we ever build it):** an opt-in server-side execution path for scheduling, larger-than-browser files, and connector-sourced data. Everything that would need it (§2.6) is deferred with it.
 
-**Boundary rule:** a run goes server-side *only* when it needs scheduling, exceeds the client size limit, or its source is a server connector. The UI makes the switch explicit ("This automation runs on our servers and will process your data in the cloud") so the privacy contract is never silently broken. **Multi-file joins and Plotly plotting both run client-side** (joins in Pyodide, plots rendered by Plotly.js in the browser — see §2.7); neither needs the server path.
+Consequently the backend holds only **recipe text + metadata + version history** — a tiny, low-risk surface — and never file contents (§2.5).
 
 ### 2.5 File & data privacy
-**Default: never persist file contents server-side.** For generation, the browser extracts only **column schema + optionally the first N sample rows** (user can disable sample sharing) and sends *that* to `/generate`. The model sees structure, not the dataset. This preserves "your data never leaves your machine" for the entire default flow. Premium server runs change this and we say so plainly: files are processed in an **ephemeral sandbox and deleted immediately after the run** (or a short, disclosed retention for scheduled jobs); encrypted in transit/at rest; per-tenant isolation; access-logged. Per-feature badge: "processed locally" vs "processed in cloud." Publish a plain-language data-handling page and a GDPR/CCPA export+delete path.
+**Default: never persist file contents server-side.** For generation, the browser extracts only **column schema + optionally the first N sample rows** (user can disable sample sharing) and sends *that* to `/generate`. The model sees structure, not the dataset. This preserves "your data never leaves your machine" for the **entire v1 flow** — since there's no server-side execution, the backend never touches file contents at all; it only ever stores recipe text + metadata. (A future opt-in server-execution path would change this for those runs only — ephemeral sandbox, immediate deletion, a per-feature "processed in cloud" badge — but it's deferred, per §2.4.) Publish a plain-language data-handling page and a GDPR/CCPA export+delete path.
 
-### 2.6 Premium capabilities that require the backend
-Scheduled re-runs (cron → server execution against a connector source); connectors (Google Sheets, email-attachment ingestion, Drive/Dropbox/S3); team-shared recipe libraries + roles + audit history; larger files.
+### 2.6 What the v1 backend does — and doesn't
+**Does (all CRUD + auth + a stateless generation proxy — no code execution, no file storage):**
+- **LLM generation proxy** (§2.2, Bedrock) — generates recipe scripts; does not run them.
+- **Recipe persistence** — save / open / rename / delete.
+- **Versioning** — an immutable version per edit; history, diff, and rollback (the core "save & version scripts" ask).
+- **Sharing** — view / clone links; recipes travel, data doesn't.
+- **Accounts** — anonymous-first + claim-on-signup (§2.1–2.3).
+- **Run-history metadata** — params used, row counts, timestamps — *metadata only, never data*.
+- **Conveniences** — templates gallery, recipe import/export (`.py`), and usage/quota metering for generation.
+
+**Doesn't (deferred with the server-execution path, §2.4):** scheduled re-runs, connectors (Google Sheets / email / cloud storage), and larger-than-browser files — each needs server-side execution or data handling we've deliberately deferred for security.
 
 ### 2.7 Recipe I/O contract — multiple inputs, tables + plots (v2 format)
 The recipe is the core artifact; the v2 format generalizes it from "one table in, one table out" to real office work: **join multiple files, produce multiple result tables, and draw charts.**
@@ -225,6 +235,7 @@ WCAG 2.1 AA: color-independent diffs (icon + strikethrough + label, never color 
 
 - **MVP (validate the funnel):** Next.js migration + server-side LLM proxy (kills BYO-key) + anonymous-first cloud persistence + the describe→preview→apply loop polished + sample-data path + **v2 recipe contract (multi-file inputs, multi-table output)** so the join wedge is testable from day one. Client-side execution only. Instrument the funnel.
 - **v1 (make it sticky & monetizable):** accounts (magic-link + OAuth) with anonymous→auth linking, recipe library + versioning, re-run-on-new-file with schema mapping, **charts (Plotly.js render path + curated bundle)**, sharing links, Stripe + metering, template gallery seeded (including join and chart templates).
-- **v2 (premium/automation):** server-side execution path, scheduling, connectors, teams + audit history, larger files.
+- **v2 (collaboration):** teams + shared libraries + roles + audit history (all persistence — no execution needed).
+- **Deferred / security-gated (revisit before building):** the server-side execution path and everything that depends on it — scheduled re-runs, connectors, and larger-than-browser files (§2.4). Not on the roadmap until the security tradeoff is re-evaluated.
 
 Success gate to move MVP→v1: a meaningful share of first-run users reach the aha moment *and* a meaningful share of those save a recipe. If the reuse loop doesn't show up, revisit the wedge before building billing.
