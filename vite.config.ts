@@ -6,4 +6,14 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  // Dev: proxy /api to the FastAPI backend (prod uses the same /api path via nginx).
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, ""),
+      },
+    },
+  },
 });

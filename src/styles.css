@@ -410,3 +410,25 @@ th {
 
 .output { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
 .plot-host { min-height: 320px; }
+
+/* Describe / generate */
+.describe .assistant-reply { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; font-size: 14px; }
+.describe .cursor { color: var(--accent); }
+.describe-input { display: flex; gap: 8px; align-items: flex-end; }
+.describe-input textarea { flex: 1; font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.primary:hover:not(:disabled) { background: #145a49; color: #fff; }
+button.primary:disabled { opacity: .5; }
+
+.save-bar { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
+
+/* Library */
+.recipe-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.recipe-list > li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.recipe-list > li.active { border-color: var(--accent); background: var(--accent-soft); }
+.recipe-row { display: flex; align-items: center; gap: 12px; }
+.recipe-name { font-weight: 600; flex: 1; }
+.version-list { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.version-list li { display: flex; gap: 10px; align-items: baseline; }
+.version-list .vno { font-family: var(--mono); color: var(--accent); font-weight: 600; }
+.version-list .vprompt { color: var(--muted); font-style: italic; }

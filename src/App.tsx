@@ -12,12 +12,18 @@ import {
   SAMPLE_PARAMS,
   SAMPLE_SCRIPT,
 } from "./lib/fixtures";
-import type {
-  InputFile,
-  RecipeMeta,
-  RecipeParam,
-  RunResult,
-} from "./types";
+import {
+  addVersion,
+  createRecipe,
+  explanationOnly,
+  generateRecipe,
+  getRecipe,
+  listRecipes,
+  listVersions,
+  type RecipeSummary,
+  type VersionSummary,
+} from "./lib/api";
+import type { ChatMessage, InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
 
 type ParamValues = Record<string, string | number | boolean>;
 
@@ -32,18 +38,39 @@ export function App() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
 
-  // Start downloading Pyodide right away so the first file load is fast.
+  // describe → generate
+  const [describeText, setDescribeText] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [assistantText, setAssistantText] = useState("");
+  const [genError, setGenError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  // library (persistence + versioning)
+  const [library, setLibrary] = useState<RecipeSummary[]>([]);
+  const [currentRecipeId, setCurrentRecipeId] = useState<string | null>(null);
+  const [currentRecipeName, setCurrentRecipeName] = useState("");
+  const [versions, setVersions] = useState<VersionSummary[]>([]);
+  const [libMsg, setLibMsg] = useState<string | null>(null);
+
   useEffect(() => {
     pyWorker.warmUp();
+    void refreshLibrary();
   }, []);
+
+  async function refreshLibrary() {
+    try {
+      setLibrary(await listRecipes());
+    } catch {
+      /* backend may be down in dev; ignore */
+    }
+  }
 
   async function run(src: string, values: ParamValues, ins: InputFile[]) {
     if (!src || ins.length === 0) return;
     setRunning(true);
     setRunError(null);
     try {
-      const result = await pyWorker.runScript(src, values);
-      setOutput(result);
+      setOutput(await pyWorker.runScript(src, values));
     } catch (err) {
       setOutput(null);
       setRunError(errorMessage(err));
@@ -65,15 +92,10 @@ export function App() {
       }
     }
     setInputs(current);
-    if (script && current.length && !loadedRecipe) {
-      void run(script, paramValues, current);
-    }
+    if (script && current.length && !loadedRecipe) void run(script, paramValues, current);
   }
 
-  async function loadDataFile(
-    file: File,
-    current: InputFile[],
-  ): Promise<InputFile | null> {
+  async function loadDataFile(file: File, current: InputFile[]): Promise<InputFile | null> {
     setLoadingMsg(`Reading ${file.name}… (first load also fetches the Python runtime)`);
     try {
       const alias = uniqueAlias(aliasFromFilename(file.name), current);
@@ -112,8 +134,8 @@ export function App() {
     try {
       await pyWorker.clearInputs();
       const enc = new TextEncoder();
-      const ord = await pyWorker.loadInput("orders", "orders.csv", enc.encode(SAMPLE_ORDERS_CSV).buffer);
-      const cus = await pyWorker.loadInput("customers", "customers.csv", enc.encode(SAMPLE_CUSTOMERS_CSV).buffer);
+      const ord = await pyWorker.loadInput("orders", "orders.csv", enc.encode(SAMPLE_ORDERS_CSV).buffer as ArrayBuffer);
+      const cus = await pyWorker.loadInput("customers", "customers.csv", enc.encode(SAMPLE_CUSTOMERS_CSV).buffer as ArrayBuffer);
       const next: InputFile[] = [
         { alias: "orders", fileName: "orders.csv", preview: ord.preview },
         { alias: "customers", fileName: "customers.csv", preview: cus.preview },
@@ -123,6 +145,8 @@ export function App() {
       setParams(SAMPLE_PARAMS);
       const values = defaultsOf(SAMPLE_PARAMS);
       setParamValues(values);
+      setCurrentRecipeId(null);
+      setCurrentRecipeName("Revenue by region");
       await run(SAMPLE_SCRIPT, values, next);
     } catch (err) {
       setFileError(errorMessage(err));
@@ -131,10 +155,102 @@ export function App() {
     }
   }
 
+  async function generate() {
+    const q = describeText.trim();
+    if (!q || generating || inputs.length === 0) return;
+    const history: ChatMessage[] = [...messages, { role: "user", text: q }];
+    setMessages(history);
+    setDescribeText("");
+    setGenerating(true);
+    setAssistantText("");
+    setGenError(null);
+    let acc = "";
+    await generateRecipe(
+      {
+        inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns, dtypes: i.preview.dtypes })),
+        params: paramValues,
+        messages: history.map((m) => ({ role: m.role, text: m.text })),
+      },
+      (delta) => {
+        acc += delta;
+        setAssistantText(acc);
+      },
+      (generated) => {
+        setMessages([...history, { role: "assistant", text: acc }]);
+        setGenerating(false);
+        if (generated) {
+          setScript(generated);
+          void run(generated, paramValues, inputs);
+        } else {
+          setGenError("The model didn't return a script — try rephrasing.");
+        }
+      },
+      (msg) => {
+        setGenerating(false);
+        setGenError(msg);
+      },
+    );
+  }
+
   function setParam(name: string, value: string | number | boolean) {
     const values = { ...paramValues, [name]: value };
     setParamValues(values);
     if (script) void run(script, values, inputs);
+  }
+
+  async function saveToLibrary() {
+    if (!script) return;
+    const payload = {
+      script,
+      params,
+      inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
+      prompt: messages.filter((m) => m.role === "user").slice(-1)[0]?.text,
+    };
+    try {
+      if (currentRecipeId) {
+        const d = await addVersion(currentRecipeId, payload);
+        setLibMsg(`Saved v${d.current_version?.version_no} of "${d.name}"`);
+      } else {
+        const name = currentRecipeName || messages.find((m) => m.role === "user")?.text?.slice(0, 48) || "Untitled recipe";
+        const d = await createRecipe({ name, ...payload });
+        setCurrentRecipeId(d.id);
+        setCurrentRecipeName(d.name);
+        setLibMsg(`Saved "${d.name}" to your library`);
+      }
+      await refreshLibrary();
+      if (currentRecipeId) await refreshVersions(currentRecipeId);
+    } catch (err) {
+      setLibMsg(`Save failed: ${errorMessage(err)}`);
+    }
+  }
+
+  async function refreshVersions(id: string) {
+    try {
+      setVersions(await listVersions(id));
+    } catch {
+      setVersions([]);
+    }
+  }
+
+  async function openRecipe(id: string) {
+    try {
+      const d = await getRecipe(id);
+      const cv = d.current_version;
+      if (!cv) return;
+      setScript(cv.script);
+      const ps = (Array.isArray(cv.params) ? cv.params : []) as RecipeParam[];
+      setParams(ps);
+      const values = defaultsOf(ps);
+      setParamValues(values);
+      setCurrentRecipeId(d.id);
+      setCurrentRecipeName(d.name);
+      setLibMsg(`Opened "${d.name}" (v${cv.version_no})`);
+      await refreshVersions(d.id);
+      if (inputs.length) void run(cv.script, values, inputs);
+      else setLibMsg(`Opened "${d.name}" — drop this month's files to run it`);
+    } catch (err) {
+      setLibMsg(`Open failed: ${errorMessage(err)}`);
+    }
   }
 
   function reset() {
@@ -145,6 +261,12 @@ export function App() {
     setOutput(null);
     setRunError(null);
     setFileError(null);
+    setMessages([]);
+    setAssistantText("");
+    setGenError(null);
+    setCurrentRecipeId(null);
+    setCurrentRecipeName("");
+    setVersions([]);
     void pyWorker.clearInputs();
   }
 
@@ -153,20 +275,58 @@ export function App() {
     downloadBlob(`${name.replace(/\s+/g, "_")}.csv`, csv, "text/csv");
   }
 
-  function saveRecipe() {
+  function saveRecipeFile() {
     if (!script) return;
     const meta: RecipeMeta = {
       version: 2,
-      name: "recipe",
+      name: currentRecipeName || "recipe",
       created: new Date().toISOString(),
-      prompts: [],
+      prompts: messages.filter((m) => m.role === "user").map((m) => m.text),
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
       params,
     };
-    downloadBlob("recipe.py", buildRecipe(script, meta), "text/x-python");
+    downloadBlob(`${(meta.name || "recipe").replace(/\s+/g, "_")}.py`, buildRecipe(script, meta), "text/x-python");
   }
 
   const hasInputs = inputs.length > 0;
+  const explanation = explanationOnly(assistantText);
+
+  const libraryPanel = (
+    <section className="card library">
+      <div className="card-header">
+        <h2>Recipe library</h2>
+        <span className="muted">saved &amp; versioned on the server — recipes only, never your data</span>
+      </div>
+      {library.length === 0 ? (
+        <p className="muted">No saved recipes yet. Build one, then “Save to library”.</p>
+      ) : (
+        <ul className="recipe-list">
+          {library.map((r) => (
+            <li key={r.id} className={r.id === currentRecipeId ? "active" : ""}>
+              <div className="recipe-row">
+                <span className="recipe-name">{r.name}</span>
+                <span className="muted">
+                  v{r.version_count} · {relTime(r.updated_at)}
+                </span>
+                <button onClick={() => openRecipe(r.id)}>Open</button>
+              </div>
+              {r.id === currentRecipeId && versions.length > 0 && (
+                <ul className="version-list">
+                  {versions.map((v) => (
+                    <li key={v.id}>
+                      <span className="vno">v{v.version_no}</span>
+                      <span className="muted">{relTime(v.created_at)}</span>
+                      {v.prompt && <span className="vprompt">“{v.prompt}”</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 
   return (
     <div className="app">
@@ -195,6 +355,7 @@ export function App() {
               Load sample files (orders + customers) →
             </button>
           </p>
+          {libraryPanel}
         </>
       )}
 
@@ -221,6 +382,37 @@ export function App() {
             <DropZone onFiles={handleFiles} label="＋ Add another file" compact />
           </section>
 
+          <section className="card describe">
+            <div className="card-header">
+              <h2>Describe what you need</h2>
+              <span className="muted">plain English — the AI writes the recipe</span>
+            </div>
+            {(explanation || generating) && (
+              <div className="assistant-reply">
+                {explanation || "Thinking…"}
+                {generating && <span className="cursor">▍</span>}
+              </div>
+            )}
+            {genError && <div className="run-error"><pre>{genError}</pre></div>}
+            <div className="describe-input">
+              <textarea
+                value={describeText}
+                placeholder='e.g. "join orders to customers, then total revenue by region as a bar chart"'
+                rows={2}
+                onChange={(e) => setDescribeText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void generate();
+                  }
+                }}
+              />
+              <button className="primary" disabled={generating || !describeText.trim()} onClick={() => void generate()}>
+                {generating ? "Generating…" : "Generate"}
+              </button>
+            </div>
+          </section>
+
           {params.length > 0 && (
             <section className="card params-card">
               <div className="card-header">
@@ -229,12 +421,7 @@ export function App() {
               </div>
               <div className="params-grid">
                 {params.map((p) => (
-                  <ParamControl
-                    key={p.name}
-                    param={p}
-                    value={paramValues[p.name]}
-                    onChange={(v) => setParam(p.name, v)}
-                  />
+                  <ParamControl key={p.name} param={p} value={paramValues[p.name]} onChange={(v) => setParam(p.name, v)} />
                 ))}
               </div>
             </section>
@@ -268,14 +455,23 @@ export function App() {
             </section>
           )}
 
+          <div className="save-bar">
+            <button className="primary" onClick={saveToLibrary} disabled={!script}>
+              {currentRecipeId ? "Save new version" : "Save to library"}
+            </button>
+            {libMsg && <span className="muted">{libMsg}</span>}
+          </div>
+
           <ScriptPanel
             script={script}
             running={running}
             canRun={hasInputs}
             onChange={setScript}
             onRun={() => script && run(script, paramValues, inputs)}
-            onSaveRecipe={saveRecipe}
+            onSaveRecipe={saveRecipeFile}
           />
+
+          {libraryPanel}
         </>
       )}
     </div>
@@ -306,11 +502,7 @@ function ParamControl({
           ))}
         </select>
       ) : param.type === "bool" ? (
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={(e) => onChange(e.target.checked)}
-        />
+        <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
       ) : param.type === "number" || param.type === "currency" ? (
         <div className="num-input">
           {param.type === "currency" && <span>$</span>}
@@ -354,6 +546,16 @@ function uniqueAlias(base: string, current: InputFile[]): string {
   let n = 2;
   while (taken.has(`${base}_${n}`)) n++;
   return `${base}_${n}`;
+}
+
+function relTime(iso: string): string {
+  const d = new Date(iso).getTime();
+  if (Number.isNaN(d)) return "";
+  const s = Math.max(0, (Date.now() - d) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
 function errorMessage(err: unknown): string {
