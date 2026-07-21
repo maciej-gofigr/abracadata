@@ -77,6 +77,11 @@ class Recipe(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     current_version_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # When set, the recipe is shareable: anyone with this token can view + run it
+    # (public, no auth). Revoking = setting this back to NULL.
+    share_token: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(default=_now)
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
 

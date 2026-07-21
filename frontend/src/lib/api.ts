@@ -51,11 +51,22 @@ export interface RecipeSummary {
   name: string;
   version_count: number;
   updated_at: string;
+  share_token: string | null;
+}
+
+export interface SharedRecipe {
+  name: string;
+  script: string;
+  params: unknown;
+  param_values: unknown;
+  inputs: unknown;
+  prompt: string | null;
 }
 
 export interface RecipeDetail {
   id: string;
   name: string;
+  share_token: string | null;
   current_version: {
     id: string;
     version_no: number;
@@ -133,4 +144,21 @@ export function renameRecipe(id: string, name: string): Promise<RecipeDetail> {
 export async function deleteRecipe(id: string): Promise<void> {
   const r = await fetch(`/api/recipes/${id}`, { method: "DELETE", credentials: "include" });
   if (!r.ok) throw new Error(`Delete failed (${r.status})`);
+}
+
+// ---------- sharing ----------
+
+export function shareRecipe(id: string): Promise<RecipeDetail> {
+  return fetch(`/api/recipes/${id}/share`, { method: "POST", credentials: "include" }).then(j<RecipeDetail>);
+}
+
+export function unshareRecipe(id: string): Promise<RecipeDetail> {
+  return fetch(`/api/recipes/${id}/share`, { method: "DELETE", credentials: "include" }).then(j<RecipeDetail>);
+}
+
+export async function getSharedRecipe(token: string): Promise<SharedRecipe> {
+  const r = await fetch(`/api/recipes/shared/${encodeURIComponent(token)}`, { credentials: "include" });
+  if (r.status === 404) throw new Error("This shared recipe wasn't found — the link may have been revoked.");
+  if (!r.ok) throw new Error(`Couldn't load the shared recipe (${r.status}).`);
+  return r.json();
 }

@@ -54,6 +54,53 @@ def client(app: FastAPI) -> TestClient:
     return TestClient(app)
 
 
+def test_share_flow(app: FastAPI) -> None:
+    owner = TestClient(app)
+    r = owner.post("/recipes", json={
+        "name": "Shared one", "script": "print('x')",
+        "params": [{"name": "n", "type": "number", "default": 5}],
+        "param_values": {"n": 9},
+        "inputs": [{"alias": "orders", "columns": ["Order ID"]}],
+    })
+    rid = r.json()["id"]
+    assert r.json()["share_token"] is None
+
+    # Enable sharing -> get a token.
+    r = owner.post(f"/recipes/{rid}/share")
+    token = r.json()["share_token"]
+    assert token and len(token) > 10
+    # Idempotent: sharing again keeps the same token.
+    assert owner.post(f"/recipes/{rid}/share").json()["share_token"] == token
+    # List surfaces the token to the owner.
+    assert owner.get("/recipes").json()[0]["share_token"] == token
+
+    # A DIFFERENT visitor (fresh cookie jar, no access to the owner's library)
+    # can fetch the shared recipe by token — the transformation, no owner info.
+    visitor = TestClient(app)
+    assert visitor.get("/recipes").json() == []  # can't see the owner's library
+    s = visitor.get(f"/recipes/shared/{token}")
+    assert s.status_code == 200
+    body = s.json()
+    assert body["name"] == "Shared one"
+    assert body["script"] == "print('x')"
+    assert body["param_values"] == {"n": 9}
+    assert "owner" not in body and "id" not in body  # no owner/identity leak
+
+    # The visitor can save a copy into THEIR own library (fork).
+    copy = visitor.post("/recipes", json={"name": "Shared one (copy)", "script": body["script"], "params": body["params"], "inputs": body["inputs"]})
+    assert copy.status_code == 201
+    assert {x["name"] for x in visitor.get("/recipes").json()} == {"Shared one (copy)"}
+
+    # Revoke -> the link 404s.
+    owner.delete(f"/recipes/{rid}/share")
+    assert owner.get("/recipes").json()[0]["share_token"] is None
+    assert visitor.get(f"/recipes/shared/{token}").status_code == 404
+
+
+def test_shared_unknown_token_404(client: TestClient) -> None:
+    assert client.get("/recipes/shared/nope-not-a-real-token").status_code == 404
+
+
 def test_create_list_get_version_flow(client: TestClient) -> None:
     # Create
     r = client.post(

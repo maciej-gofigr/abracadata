@@ -105,6 +105,14 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
   returns the code in the response for local use — wire a real mailer (e.g. SES) for prod.
 - **Persistence:** SQLAlchemy 2.0; sqlite `backend/data/app.db` by default, Postgres via compose
   (`DATABASE_URL`). Recipe versions are immutable snapshots (script + params + param_values + inputs).
+- **Sharing:** a recipe can have an unguessable `share_token` (`POST/DELETE /recipes/{id}/share`).
+  `GET /recipes/shared/{token}` is **public** (no auth) and returns only the recipe *text* (script +
+  expected columns + knob defaults) — never any data or owner identity. Since execution is client-side,
+  sharing a link shares only the transformation; the recipient runs it on their own files locally.
+- **Apply vs. author:** `frontend/src/components/ApplyView.tsx` is the focused "run a recipe" screen
+  (named drop-slots per input, knobs, output, "save a copy"). It's used both for a shared link
+  (`/s/{token}`, detected on mount) and when opening your own recipe from the library; **Edit** hands off
+  to the authoring workspace. The authoring workspace (describe → agent → save) is the other mode.
 - **Product name is centralized** in `frontend/src/branding.ts` (`APP_NAME`, `APP_TAGLINE`) — never add a
   second copy. **UI state is all in `frontend/src/App.tsx`** via `useState`; no store/router/context.
 - **Recipe file format** (`frontend/src/lib/recipe.ts`): a `# === recipe metadata ===` JSON-in-comments

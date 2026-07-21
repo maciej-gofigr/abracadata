@@ -6,6 +6,7 @@ different session are invisible (404) to the caller.
 
 from __future__ import annotations
 
+import secrets
 from datetime import datetime
 from typing import Any, Optional
 
@@ -62,6 +63,7 @@ class RecipeDetail(BaseModel):
     current_version_id: Optional[str]
     created_at: datetime
     updated_at: datetime
+    share_token: Optional[str] = None
     current_version: Optional[CurrentVersion] = None
 
 
@@ -70,6 +72,18 @@ class RecipeListItem(BaseModel):
     name: str
     version_count: int
     updated_at: datetime
+    share_token: Optional[str] = None
+
+
+class SharedRecipe(BaseModel):
+    """Public view of a shared recipe — the transformation only, never any data."""
+
+    name: str
+    script: str
+    params: Any = Field(default_factory=list)
+    param_values: Any = Field(default_factory=dict)
+    inputs: Any = Field(default_factory=list)
+    prompt: Optional[str] = None
 
 
 class VersionListItem(BaseModel):
@@ -129,6 +143,7 @@ def _detail(db: Session, recipe: Recipe) -> RecipeDetail:
         current_version_id=recipe.current_version_id,
         created_at=recipe.created_at,
         updated_at=recipe.updated_at,
+        share_token=recipe.share_token,
         current_version=_current_version_schema(db, recipe),
     )
 
@@ -180,6 +195,7 @@ def list_recipes(
             Recipe.name,
             count_col,
             Recipe.updated_at,
+            Recipe.share_token,
         )
         .outerjoin(RecipeVersion, RecipeVersion.recipe_id == Recipe.id)
         .where(_owner_filter(principal))
@@ -187,9 +203,58 @@ def list_recipes(
         .order_by(Recipe.updated_at.desc())
     ).all()
     return [
-        RecipeListItem(id=r_id, name=name, version_count=count, updated_at=updated_at)
-        for (r_id, name, count, updated_at) in rows
+        RecipeListItem(id=r_id, name=name, version_count=count, updated_at=updated_at, share_token=tok)
+        for (r_id, name, count, updated_at, tok) in rows
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Sharing — a share_token grants public view+run access to the recipe text.
+# --------------------------------------------------------------------------- #
+@router.post("/{recipe_id}/share", response_model=RecipeDetail)
+def share_recipe(
+    recipe_id: str,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+) -> RecipeDetail:
+    recipe = _get_owned_recipe(db, principal, recipe_id)
+    if not recipe.share_token:
+        recipe.share_token = secrets.token_urlsafe(16)
+        db.commit()
+        db.refresh(recipe)
+    return _detail(db, recipe)
+
+
+@router.delete("/{recipe_id}/share", response_model=RecipeDetail)
+def unshare_recipe(
+    recipe_id: str,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+) -> RecipeDetail:
+    recipe = _get_owned_recipe(db, principal, recipe_id)
+    recipe.share_token = None
+    db.commit()
+    db.refresh(recipe)
+    return _detail(db, recipe)
+
+
+@router.get("/shared/{token}", response_model=SharedRecipe)
+def get_shared_recipe(token: str, db: Session = Depends(get_db)) -> SharedRecipe:
+    """Public — anyone with the token gets the recipe text (no data, no owner)."""
+    recipe = db.execute(select(Recipe).where(Recipe.share_token == token)).scalars().first()
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="This shared recipe was not found (the link may have been revoked).")
+    cv = _current_version_schema(db, recipe)
+    if cv is None:
+        raise HTTPException(status_code=404, detail="This shared recipe has no content.")
+    return SharedRecipe(
+        name=recipe.name,
+        script=cv.script,
+        params=cv.params,
+        param_values=cv.param_values,
+        inputs=cv.inputs,
+        prompt=cv.prompt,
+    )
 
 
 @router.get("/{recipe_id}", response_model=RecipeDetail)

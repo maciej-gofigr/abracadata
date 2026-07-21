@@ -6,7 +6,7 @@ import { DropZone } from "./components/DropZone";
 import { PlotView } from "./components/PlotView";
 import { pyWorker } from "./lib/pyodide";
 import { buildRecipe, parseRecipe } from "./lib/recipe";
-import { paramSettings, prettify } from "./lib/format";
+import { friendlyRunError, paramSettings, prettify } from "./lib/format";
 import {
   SAMPLE_CUSTOMERS_CSV,
   SAMPLE_ORDERS_CSV,
@@ -21,16 +21,21 @@ import {
   deleteRecipe,
   explanationOnly,
   getRecipe,
+  getSharedRecipe,
   listRecipes,
   listVersions,
   renameRecipe,
+  shareRecipe,
+  unshareRecipe,
+  type RecipeDetail,
   type RecipeSummary,
+  type SharedRecipe,
   type VersionSummary,
 } from "./lib/api";
 import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
+import { ParamControl, defaultsOf, type ParamValues } from "./components/ParamControl";
+import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import type { InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
-
-type ParamValues = Record<string, string | number | boolean>;
 
 export function App() {
   const [inputs, setInputs] = useState<InputFile[]>([]);
@@ -74,10 +79,22 @@ export function App() {
   const [user, setUser] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
 
+  const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared"; recipeId?: string } | null>(null);
+  const [sharePanelId, setSharePanelId] = useState<string | null>(null);
+  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [copiedShare, setCopiedShare] = useState(false);
+
   useEffect(() => {
     pyWorker.warmUp();
     void refreshLibrary();
     void authMe().then((r) => setUser(r.email)).catch(() => {});
+    // Shared link: /s/{token} -> load the recipe into the apply view.
+    const m = window.location.pathname.match(/^\/s\/([^/]+)/);
+    if (m) {
+      void getSharedRecipe(decodeURIComponent(m[1]))
+        .then((s) => setApplyState({ recipe: applyRecipeFromShared(s), mode: "shared" }))
+        .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
+    }
   }, []);
 
   async function refreshLibrary() {
@@ -360,38 +377,66 @@ export function App() {
     }
   }
 
+  // Opening a saved recipe drops you into the focused "apply" view (drag files,
+  // tweak knobs, run) rather than the authoring workspace.
   async function openRecipe(id: string) {
     if (openingId) return;
     setOpeningId(id);
     try {
       const d = await getRecipe(id);
-      const cv = d.current_version;
-      if (!cv) return;
-      resetConversation(); // opening a saved recipe starts a fresh agent context
-      setScript(cv.script);
-      const ps = (Array.isArray(cv.params) ? cv.params : []) as RecipeParam[];
-      setParams(ps);
-      // Restore the values the user last saved, falling back to generated
-      // defaults for any knob the saved values don't cover.
-      const saved = cv.param_values && typeof cv.param_values === "object" ? (cv.param_values as ParamValues) : {};
-      const values = { ...defaultsOf(ps), ...saved };
-      setParamValues(values);
-      setCurrentRecipeId(d.id);
-      setCurrentRecipeName(d.name);
-      setExpectedInputs(Array.isArray(cv.inputs) ? (cv.inputs as { alias: string; columns: string[] }[]) : []);
-      await refreshVersions(d.id);
-      if (inputs.length) {
-        setLibMsg(`Opened “${d.name}” (v${cv.version_no})`);
-        void run(cv.script, values, inputs);
-      } else {
-        setLibMsg(`Opened “${d.name}” — drop this month's files to run it`);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
+      const recipe = applyRecipeFromDetail(d);
+      if (!recipe) return;
+      void pyWorker.clearInputs();
+      setApplyState({ recipe, mode: "owner", recipeId: d.id });
+      window.scrollTo({ top: 0 });
     } catch (err) {
       setLibMsg(`Open failed: ${errorMessage(err)}`);
     } finally {
       setOpeningId(null);
     }
+  }
+
+  function exitApply() {
+    setApplyState(null);
+    void pyWorker.clearInputs();
+    if (window.location.pathname.startsWith("/s/")) {
+      window.history.pushState({}, "", "/");
+      reset();
+    }
+  }
+
+  // "Save a copy" from a shared recipe -> a new recipe in the caller's library.
+  async function saveSharedCopy(paramValues: ParamValues, ins: InputFile[]): Promise<string | null> {
+    if (!applyState) return null;
+    const r = applyState.recipe;
+    const d = await createRecipe({
+      name: `${r.name} (copy)`,
+      script: r.script,
+      params: r.params,
+      param_values: paramValues,
+      inputs: r.inputs.length ? r.inputs : ins.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
+      prompt: r.description,
+    });
+    await refreshLibrary();
+    return d.name;
+  }
+
+  // "Edit recipe" from the owner's apply view -> load it into the authoring workspace.
+  function editFromApply(ins: InputFile[], paramValues: ParamValues) {
+    if (!applyState) return;
+    const r = applyState.recipe;
+    resetConversation();
+    setScript(r.script);
+    setParams(r.params);
+    setParamValues(paramValues);
+    setInputs(ins);
+    setActiveInputIdx(0);
+    setCurrentRecipeId(applyState.recipeId ?? null);
+    setCurrentRecipeName(r.name);
+    setExpectedInputs(r.inputs);
+    if (applyState.recipeId) void refreshVersions(applyState.recipeId);
+    setApplyState(null);
+    if (ins.length) void run(r.script, paramValues, ins);
   }
 
   function startRename(r: RecipeSummary) {
@@ -430,6 +475,44 @@ export function App() {
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
+    }
+  }
+
+  async function openShare(r: RecipeSummary) {
+    setConfirmDeleteId(null);
+    setCopiedShare(false);
+    setSharePanelId(r.id);
+    if (!r.share_token) {
+      setSharingId(r.id);
+      try {
+        await shareRecipe(r.id);
+        await refreshLibrary();
+      } catch (err) {
+        setLibMsg(`Share failed: ${errorMessage(err)}`);
+        setSharePanelId(null);
+      } finally {
+        setSharingId(null);
+      }
+    }
+  }
+
+  async function stopSharing(id: string) {
+    try {
+      await unshareRecipe(id);
+      await refreshLibrary();
+    } catch (err) {
+      setLibMsg(`Couldn't stop sharing: ${errorMessage(err)}`);
+    } finally {
+      setSharePanelId(null);
+    }
+  }
+
+  async function copyShareLink(token: string) {
+    try {
+      await navigator.clipboard.writeText(shareLink(token));
+      setCopiedShare(true);
+    } catch {
+      /* clipboard may be blocked; the link is selectable in the field */
     }
   }
 
@@ -548,6 +631,17 @@ export function App() {
                   <button className="btn ghost" disabled={openingId === r.id} onClick={() => openRecipe(r.id)}>
                     {openingId === r.id ? <><span className="spinner" aria-hidden="true" />Opening…</> : "Open"}
                   </button>
+                  <button
+                    className={`icon-btn sm ${r.share_token ? "shared" : ""}`}
+                    title={r.share_token ? "Shared — get the link" : "Share"}
+                    aria-label="Share recipe"
+                    disabled={sharingId === r.id}
+                    onClick={() => openShare(r)}
+                  >
+                    {sharingId === r.id ? <span className="spinner" aria-hidden="true" /> : (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="18" cy="5" r="2.3" stroke="currentColor" strokeWidth="1.6" /><circle cx="6" cy="12" r="2.3" stroke="currentColor" strokeWidth="1.6" /><circle cx="18" cy="19" r="2.3" stroke="currentColor" strokeWidth="1.6" /><path d="M8 10.9l8-4.8M8 13.1l8 4.8" stroke="currentColor" strokeWidth="1.6" /></svg>
+                    )}
+                  </button>
                   <button className="icon-btn sm" title="Rename" aria-label="Rename recipe" onClick={() => startRename(r)}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 00-3-3L5 17v3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M13.5 6.5l3 3" stroke="currentColor" strokeWidth="1.7" /></svg>
                   </button>
@@ -562,6 +656,16 @@ export function App() {
                       {deletingId === r.id ? <><span className="spinner" aria-hidden="true" />Deleting…</> : "Delete"}
                     </button>
                     <button className="btn ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                  </div>
+                )}
+                {sharePanelId === r.id && r.share_token && (
+                  <div className="share-row">
+                    <span className="share-label">🔗 Anyone with this link can open &amp; run it (on their own files):</span>
+                    <div className="share-link-row">
+                      <input className="share-input" readOnly value={shareLink(r.share_token)} onFocus={(e) => e.currentTarget.select()} />
+                      <button className="btn primary" onClick={() => copyShareLink(r.share_token!)}>{copiedShare ? "Copied ✓" : "Copy"}</button>
+                      <button className="btn ghost" onClick={() => stopSharing(r.id)}>Stop sharing</button>
+                    </div>
                   </div>
                 )}
                 {r.id === currentRecipeId && versions.length > 0 && (
@@ -629,7 +733,17 @@ export function App() {
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSignedIn={onSignedIn} />}
 
       <main>
-        {!hasInputs && (
+        {applyState && (
+          <ApplyView
+            recipe={applyState.recipe}
+            mode={applyState.mode}
+            onEdit={applyState.mode === "owner" ? editFromApply : undefined}
+            onSaveCopy={applyState.mode === "shared" ? saveSharedCopy : undefined}
+            onExit={exitApply}
+          />
+        )}
+
+        {!applyState && !hasInputs && (
           <section className="landing">
             <div className="eyebrow">For the spreadsheet you rebuild every month</div>
             <h1>Describe it once. <em>Re-run it forever.</em></h1>
@@ -676,7 +790,7 @@ export function App() {
           </section>
         )}
 
-        {hasInputs && (
+        {!applyState && hasInputs && (
           <>
             <div className="header-row">
               <h2 className="page-title">{currentRecipeName || "Untitled recipe"}</h2>
@@ -928,56 +1042,6 @@ function toggleTheme() {
   root.setAttribute("data-theme", isDark ? "light" : "dark");
 }
 
-function ParamControl({
-  param,
-  value,
-  onChange,
-}: {
-  param: RecipeParam;
-  value: string | number | boolean;
-  onChange: (v: string | number | boolean) => void;
-}) {
-  return (
-    <label className="param">
-      <span className="param-label">
-        {param.label}
-        {param.help && <span className="param-help"> — {param.help}</span>}
-      </span>
-      {param.type === "enum" ? (
-        <select value={String(value)} onChange={(e) => onChange(e.target.value)}>
-          {(param.options ?? []).map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
-      ) : param.type === "bool" ? (
-        <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
-      ) : param.type === "number" || param.type === "currency" ? (
-        <div className="num-input">
-          {param.type === "currency" && <span>$</span>}
-          <input
-            type="number"
-            value={Number(value)}
-            min={param.min}
-            max={param.max}
-            step={param.step ?? 1}
-            onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
-          />
-        </div>
-      ) : param.type === "date" ? (
-        <input type="date" value={String(value)} onChange={(e) => onChange(e.target.value)} />
-      ) : (
-        <input type="text" value={String(value)} onChange={(e) => onChange(e.target.value)} />
-      )}
-    </label>
-  );
-}
-
-function defaultsOf(ps: RecipeParam[]): ParamValues {
-  const v: ParamValues = {};
-  for (const p of ps) v[p.name] = p.default;
-  return v;
-}
-
 const MONTHS =
   "january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec";
 
@@ -1036,22 +1100,36 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function shareLink(token: string): string {
+  return `${window.location.origin}/s/${token}`;
+}
+
+function applyRecipeFromDetail(d: RecipeDetail): ApplyRecipe | null {
+  const cv = d.current_version;
+  if (!cv) return null;
+  return {
+    name: d.name,
+    description: (cv.prompt as string) || undefined,
+    script: cv.script,
+    params: (Array.isArray(cv.params) ? cv.params : []) as RecipeParam[],
+    paramValues: (cv.param_values && typeof cv.param_values === "object" ? cv.param_values : {}) as ParamValues,
+    inputs: (Array.isArray(cv.inputs) ? cv.inputs : []) as { alias: string; columns: string[] }[],
+  };
+}
+
+function applyRecipeFromShared(s: SharedRecipe): ApplyRecipe {
+  return {
+    name: s.name,
+    description: (s.prompt as string) || undefined,
+    script: s.script,
+    params: (Array.isArray(s.params) ? s.params : []) as RecipeParam[],
+    paramValues: (s.param_values && typeof s.param_values === "object" ? s.param_values : {}) as ParamValues,
+    inputs: (Array.isArray(s.inputs) ? s.inputs : []) as { alias: string; columns: string[] }[],
+  };
+}
+
 /** Translate a Python traceback's last line into something a non-technical
  * user can act on. Falls back to the raw last line if we don't recognise it. */
-function friendlyRunError(trace: string): string {
-  const last = trace.trim().split("\n").filter(Boolean).pop() ?? trace;
-  let m: RegExpMatchArray | null;
-  if ((m = last.match(/KeyError:\s*['"]?([^'"]+)/))) {
-    return `The recipe looked for “${m[1]}” but couldn't find it — a column may be named differently in this month's file, or a file was dropped into the wrong slot.`;
-  }
-  if (last.includes("No input files loaded")) return "Drop your files first, then the recipe will run.";
-  if ((m = last.match(/No output table named ['"]?([^'"]+)/))) return `The recipe didn't produce a “${m[1]}” table.`;
-  if (last.includes("produced no output tables")) return "The recipe finished but produced no table to show.";
-  if (last.match(/(ValueError|TypeError|AttributeError|MergeError):/)) {
-    return `${last.replace(/^\w+Error:\s*/, "")} — this usually means the data looks different from what the recipe expects.`;
-  }
-  return last;
-}
 
 function downloadBlob(name: string, content: string, type: string) {
   const blob = new Blob([content], { type });

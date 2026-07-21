@@ -8,6 +8,22 @@ export function prettify(name: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Translate a Python traceback's last line into plain, actionable language. */
+export function friendlyRunError(trace: string): string {
+  const last = trace.trim().split("\n").filter(Boolean).pop() ?? trace;
+  let m: RegExpMatchArray | null;
+  if ((m = last.match(/KeyError:\s*['"]?([^'"]+)/))) {
+    return `The recipe looked for “${m[1]}” but couldn't find it — a column may be named differently in this file, or a file was dropped into the wrong slot.`;
+  }
+  if (last.includes("No input files loaded")) return "Drop your files first, then the recipe will run.";
+  if ((m = last.match(/No output table named ['"]?([^'"]+)/))) return `The recipe didn't produce a “${m[1]}” table.`;
+  if (last.includes("produced no output tables")) return "The recipe finished but produced no table to show.";
+  if (last.match(/(ValueError|TypeError|AttributeError|MergeError):/)) {
+    return `${last.replace(/^\w+Error:\s*/, "")} — this usually means the data looks different from what the recipe expects.`;
+  }
+  return last;
+}
+
 function formatValue(p: RecipeParam, value: unknown): string {
   if (value === undefined || value === null || value === "") return "—";
   if (p.type === "currency") return `$${value}`;
