@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { APP_NAME } from "./branding";
 import { AuthModal } from "./components/AuthModal";
 import { DataTable } from "./components/DataTable";
@@ -20,7 +20,6 @@ import {
   createRecipe,
   deleteRecipe,
   explanationOnly,
-  generateRecipe,
   getRecipe,
   listRecipes,
   listVersions,
@@ -28,7 +27,8 @@ import {
   type RecipeSummary,
   type VersionSummary,
 } from "./lib/api";
-import type { ChatMessage, InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
+import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
+import type { InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
 
 type ParamValues = Record<string, string | number | boolean>;
 
@@ -47,7 +47,12 @@ export function App() {
   const [generating, setGenerating] = useState(false);
   const [assistantText, setAssistantText] = useState("");
   const [genError, setGenError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [transcript, setTranscript] = useState<AgentTurn[]>([]);
+  const [activities, setActivities] = useState<AgentActivity[]>([]);
+  const [pendingQuestion, setPendingQuestion] = useState<{ question: string; askId: string | null } | null>(null);
+  const [answerText, setAnswerText] = useState("");
+  const [allowDataAccess, setAllowDataAccess] = useState(() => localStorage.getItem("allowDataAccess.v1") !== "0");
+  const agentAbort = useRef<AbortController | null>(null);
 
   const [library, setLibrary] = useState<RecipeSummary[]>([]);
   const [currentRecipeId, setCurrentRecipeId] = useState<string | null>(null);
@@ -61,6 +66,10 @@ export function App() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [exportingTable, setExportingTable] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [user, setUser] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
@@ -175,8 +184,7 @@ export function App() {
       setParams(SAMPLE_PARAMS);
       const values = defaultsOf(SAMPLE_PARAMS);
       setParamValues(values);
-      setMessages([]);
-      setAssistantText("");
+      resetConversation();
       setCurrentRecipeId(null);
       setCurrentRecipeName("Revenue by region");
       await run(SAMPLE_SCRIPT, values, next);
@@ -187,53 +195,94 @@ export function App() {
     }
   }
 
-  async function generate() {
-    const q = describeText.trim();
-    if (!q || generating || inputs.length === 0) return;
-    const history: ChatMessage[] = [...messages, { role: "user", text: q }];
-    setMessages(history);
-    setDescribeText("");
+  function inputSchemas() {
+    return inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns, dtypes: i.preview.dtypes }));
+  }
+
+  function userPrompts(): string[] {
+    return transcript
+      .filter((m) => m.role === "user" && typeof m.text === "string" && m.text)
+      .map((m) => m.text as string);
+  }
+
+  // Run the agent loop over the given transcript (mutated in place across turns).
+  async function driveAgent(t: AgentTurn[]) {
+    setTranscript(t);
     setGenerating(true);
     setAssistantText("");
+    setActivities([]);
     setGenError(null);
-    let acc = "";
-    await generateRecipe(
+    setPendingQuestion(null);
+    let narration = "";
+    const abort = new AbortController();
+    agentAbort.current = abort;
+    await runAgent(
+      inputSchemas(),
+      t,
+      { allowDataAccess, signal: abort.signal },
       {
-        inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns, dtypes: i.preview.dtypes })),
-        params: paramValues,
-        messages: history.map((m) => ({ role: m.role, text: m.text })),
-      },
-      (delta) => {
-        acc += delta;
-        setAssistantText(acc);
-      },
-      (generated, genParams) => {
-        setMessages([...history, { role: "assistant", text: acc }]);
-        setGenerating(false);
-        if (generated) {
-          setScript(generated);
-          // The generator infers which scalars are worth exposing as knobs and
-          // returns them as a spec; render exactly those (replacing any stale set).
-          const ps = (Array.isArray(genParams) ? genParams : []) as RecipeParam[];
+        onText: (delta) => {
+          narration += delta;
+          setAssistantText(explanationOnly(narration));
+        },
+        onActivity: (a) => setActivities(a),
+        onQuestion: (question, askId) => {
+          setPendingQuestion({ question, askId });
+          setAnswerText("");
+          setGenerating(false);
+        },
+        onFinal: ({ script: src, params: ps, explanation }) => {
+          setGenerating(false);
+          setActivities([]);
+          setScript(src);
           setParams(ps);
           const values = defaultsOf(ps);
           setParamValues(values);
-          void run(generated, values, inputs);
-        } else {
-          setGenError("The model didn't return a recipe — try rephrasing.");
-        }
-      },
-      (msg) => {
-        setGenerating(false);
-        setGenError(msg);
+          setAssistantText(explanation);
+          void run(src, values, inputs);
+        },
+        onError: (msg) => {
+          setGenerating(false);
+          setGenError(msg);
+        },
       },
     );
+  }
+
+  async function generate() {
+    const q = describeText.trim();
+    if (!q || generating || inputs.length === 0) return;
+    setDescribeText("");
+    await driveAgent([...transcript, { role: "user", text: q }]);
+  }
+
+  async function answerQuestion() {
+    const a = answerText.trim();
+    if (!a || !pendingQuestion) return;
+    const t = transcript;
+    if (pendingQuestion.askId) {
+      t.push({ role: "tool", results: [{ id: pendingQuestion.askId, ok: true, content: { answer: a } }] });
+    } else {
+      t.push({ role: "user", text: a });
+    }
+    await driveAgent(t);
+  }
+
+  function cancelGenerate() {
+    // Reset the chat context: a mid-flight transcript can end on an unresolved
+    // tool call, which would break the next generation. The recipe/output stay.
+    resetConversation();
   }
 
   function setParam(name: string, value: string | number | boolean) {
     const values = { ...paramValues, [name]: value };
     setParamValues(values);
     if (script) void run(script, values, inputs);
+  }
+
+  function toggleDataAccess(on: boolean) {
+    setAllowDataAccess(on);
+    localStorage.setItem("allowDataAccess.v1", on ? "1" : "0");
   }
 
   async function commitAlias(inp: InputFile) {
@@ -255,22 +304,41 @@ export function App() {
     if (script) void run(script, paramValues, updated);
   }
 
+  async function removeInput(target: InputFile) {
+    const remaining = inputs.filter((i) => i !== target);
+    await pyWorker.removeInput(target.alias);
+    setInputs(remaining);
+    setActiveInputIdx((idx) => Math.max(0, Math.min(idx, remaining.length - 1)));
+    setAliasDraft((d) => {
+      const n = { ...d };
+      delete n[target.fileName];
+      return n;
+    });
+    if (remaining.length === 0) {
+      setOutput(null);
+      setRunError(null);
+    } else if (script) {
+      void run(script, paramValues, remaining);
+    }
+  }
+
   async function saveToLibrary() {
-    if (!script) return;
+    if (!script || saving) return;
     const payload = {
       script,
       params,
       param_values: paramValues,
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
-      prompt: messages.filter((m) => m.role === "user").slice(-1)[0]?.text,
+      prompt: userPrompts().slice(-1)[0],
     };
+    setSaving(true);
     try {
       if (currentRecipeId) {
         const d = await addVersion(currentRecipeId, payload);
         setLibMsg(`Saved v${d.current_version?.version_no}`);
         await refreshVersions(currentRecipeId);
       } else {
-        const name = currentRecipeName || messages.find((m) => m.role === "user")?.text?.slice(0, 48) || "Untitled recipe";
+        const name = currentRecipeName || userPrompts()[0]?.slice(0, 48) || "Untitled recipe";
         const d = await createRecipe({ name, ...payload });
         setCurrentRecipeId(d.id);
         setCurrentRecipeName(d.name);
@@ -279,6 +347,8 @@ export function App() {
       await refreshLibrary();
     } catch (err) {
       setLibMsg(`Save failed: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -291,10 +361,13 @@ export function App() {
   }
 
   async function openRecipe(id: string) {
+    if (openingId) return;
+    setOpeningId(id);
     try {
       const d = await getRecipe(id);
       const cv = d.current_version;
       if (!cv) return;
+      resetConversation(); // opening a saved recipe starts a fresh agent context
       setScript(cv.script);
       const ps = (Array.isArray(cv.params) ? cv.params : []) as RecipeParam[];
       setParams(ps);
@@ -316,6 +389,8 @@ export function App() {
       }
     } catch (err) {
       setLibMsg(`Open failed: ${errorMessage(err)}`);
+    } finally {
+      setOpeningId(null);
     }
   }
 
@@ -340,7 +415,7 @@ export function App() {
   }
 
   async function removeRecipe(id: string) {
-    setConfirmDeleteId(null);
+    setDeletingId(id);
     try {
       await deleteRecipe(id);
       if (id === currentRecipeId) {
@@ -352,6 +427,9 @@ export function App() {
       await refreshLibrary();
     } catch (err) {
       setLibMsg(`Delete failed: ${errorMessage(err)}`);
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
     }
   }
 
@@ -373,6 +451,17 @@ export function App() {
     await refreshLibrary();
   }
 
+  function resetConversation() {
+    agentAbort.current?.abort();
+    setTranscript([]);
+    setAssistantText("");
+    setActivities([]);
+    setPendingQuestion(null);
+    setAnswerText("");
+    setGenerating(false);
+    setGenError(null);
+  }
+
   function reset() {
     setInputs([]);
     setScript(null);
@@ -381,9 +470,7 @@ export function App() {
     setOutput(null);
     setRunError(null);
     setFileError(null);
-    setMessages([]);
-    setAssistantText("");
-    setGenError(null);
+    resetConversation();
     setCurrentRecipeId(null);
     setCurrentRecipeName("");
     setVersions([]);
@@ -395,8 +482,14 @@ export function App() {
   }
 
   async function downloadTable(name: string) {
-    const { csv } = await pyWorker.exportTable(name);
-    downloadBlob(`${name.replace(/\s+/g, "_")}.csv`, csv, "text/csv");
+    if (exportingTable) return;
+    setExportingTable(name);
+    try {
+      const { csv } = await pyWorker.exportTable(name);
+      downloadBlob(`${name.replace(/\s+/g, "_")}.csv`, csv, "text/csv");
+    } finally {
+      setExportingTable(null);
+    }
   }
 
   function downloadRecipeFile() {
@@ -405,7 +498,7 @@ export function App() {
       version: 2,
       name: currentRecipeName || "recipe",
       created: new Date().toISOString(),
-      prompts: messages.filter((m) => m.role === "user").map((m) => m.text),
+      prompts: userPrompts(),
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
       // Bake the current knob values in as defaults so the standalone CLI
       // remembers the user's tweaks too.
@@ -416,7 +509,6 @@ export function App() {
 
   const hasInputs = inputs.length > 0;
   const activeInput = inputs[Math.min(activeInputIdx, inputs.length - 1)] ?? null;
-  const explanation = explanationOnly(assistantText);
 
   const library_panel =
     library.length > 0 ? (
@@ -453,7 +545,9 @@ export function App() {
                     <span className="recipe-name">{r.name}</span>
                   )}
                   <span className="muted">v{r.version_count} · {relTime(r.updated_at)}</span>
-                  <button className="btn ghost" onClick={() => openRecipe(r.id)}>Open</button>
+                  <button className="btn ghost" disabled={openingId === r.id} onClick={() => openRecipe(r.id)}>
+                    {openingId === r.id ? <><span className="spinner" aria-hidden="true" />Opening…</> : "Open"}
+                  </button>
                   <button className="icon-btn sm" title="Rename" aria-label="Rename recipe" onClick={() => startRename(r)}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 00-3-3L5 17v3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M13.5 6.5l3 3" stroke="currentColor" strokeWidth="1.7" /></svg>
                   </button>
@@ -464,7 +558,9 @@ export function App() {
                 {confirmDeleteId === r.id && (
                   <div className="confirm-row">
                     <span>Delete “{r.name}” and its {r.version_count} version{r.version_count === 1 ? "" : "s"}? This can't be undone.</span>
-                    <button className="btn danger" onClick={() => removeRecipe(r.id)}>Delete</button>
+                    <button className="btn danger" disabled={deletingId === r.id} onClick={() => removeRecipe(r.id)}>
+                      {deletingId === r.id ? <><span className="spinner" aria-hidden="true" />Deleting…</> : "Delete"}
+                    </button>
                     <button className="btn ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
                   </div>
                 )}
@@ -586,7 +682,7 @@ export function App() {
               <h2 className="page-title">{currentRecipeName || "Untitled recipe"}</h2>
             </div>
 
-            {loadingMsg && <div className="status">{loadingMsg}</div>}
+            {loadingMsg && <div className="status"><span className="spinner" aria-hidden="true" />{loadingMsg}</div>}
             {fileError && <div className="error">{fileError}</div>}
 
             <section className="section">
@@ -597,15 +693,33 @@ export function App() {
               </div>
               <div className="input-tabs" role="tablist" aria-label="Input files">
                 {inputs.map((inp, i) => (
-                  <button
+                  <div
                     key={inp.fileName}
                     role="tab"
+                    tabIndex={0}
                     aria-selected={i === activeInputIdx}
                     className={`input-tab ${i === activeInputIdx ? "active" : ""}`}
                     onClick={() => setActiveInputIdx(i)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setActiveInputIdx(i);
+                      }
+                    }}
                   >
-                    {aliasDraft[inp.fileName] ?? inp.alias}
-                  </button>
+                    <span className="input-tab-label">{aliasDraft[inp.fileName] ?? inp.alias}</span>
+                    <button
+                      className="tab-close"
+                      aria-label={`Remove ${inp.alias}`}
+                      title="Remove this file"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void removeInput(inp);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
                 <DropZone onFiles={handleFiles} compact label="+ Add file" />
               </div>
@@ -633,30 +747,94 @@ export function App() {
                 <span className="count">plain English — the AI writes the recipe</span>
               </div>
               <div className="card-body">
-                {(explanation || generating) && (
-                  <div className="assistant-reply">
-                    {explanation || "Thinking…"}
-                    {generating && <span className="cursor">▍</span>}
+                {generating && activities.length > 0 && (
+                  <ul className="agent-activity">
+                    {activities.map((a, i) => (
+                      <li key={i} className={`act-${a.status}`}>
+                        {a.status === "running" ? (
+                          <span className="spinner act-spin" aria-hidden="true" />
+                        ) : (
+                          <span className="act-icon" aria-hidden="true">{a.status === "ok" ? "✓" : "!"}</span>
+                        )}
+                        {a.detail}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {(assistantText || (generating && activities.length === 0)) && (
+                  <div className={`assistant-reply ${generating ? "thinking" : ""}`}>
+                    {generating && <span className="spinner" aria-hidden="true" />}
+                    <span>{assistantText || "Thinking…"}</span>
                   </div>
                 )}
+
                 {genError && <div className="run-error" style={{ marginBottom: 12 }}><pre>{genError}</pre></div>}
-                <div className="describe-input">
-                  <textarea
-                    value={describeText}
-                    placeholder={'e.g. "join orders to customers, then total revenue by region as a bar chart"'}
-                    rows={2}
-                    onChange={(e) => setDescribeText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void generate();
+
+                {pendingQuestion ? (
+                  <div className="clarify">
+                    <div className="clarify-q"><span className="clarify-tag">Quick question</span>{pendingQuestion.question}</div>
+                    <div className="describe-input">
+                      <textarea
+                        value={answerText}
+                        autoFocus
+                        placeholder="Your answer…"
+                        rows={2}
+                        onChange={(e) => setAnswerText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void answerQuestion();
+                          }
+                        }}
+                      />
+                      <button className="btn primary" disabled={!answerText.trim()} onClick={() => void answerQuestion()}>
+                        Answer
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="describe-input">
+                    <textarea
+                      value={describeText}
+                      disabled={generating}
+                      placeholder={
+                        transcript.length
+                          ? 'Refine it — e.g. "group by Segment instead" or "only paid orders"'
+                          : 'e.g. "join orders to customers, then total revenue by region as a bar chart"'
                       }
-                    }}
+                      rows={2}
+                      onChange={(e) => setDescribeText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void generate();
+                        }
+                      }}
+                    />
+                    {generating ? (
+                      <button className="btn ghost" onClick={cancelGenerate}>Stop</button>
+                    ) : (
+                      <button className="btn primary" disabled={!describeText.trim()} onClick={() => void generate()}>
+                        Generate
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <label className="data-access">
+                  <input
+                    type="checkbox"
+                    checked={allowDataAccess}
+                    onChange={(e) => toggleDataAccess(e.target.checked)}
                   />
-                  <button className="btn primary" disabled={generating || !describeText.trim()} onClick={() => void generate()}>
-                    {generating ? "Generating…" : "Generate"}
-                  </button>
-                </div>
+                  <span>
+                    Let the AI look at sample values for more accurate recipes.
+                    <span className="muted">
+                      {" "}When on, small samples of your data are sent to the AI (Claude on AWS Bedrock); when off, only column names &amp; types are shared.
+                    </span>
+                  </span>
+                </label>
               </div>
             </section>
 
@@ -676,7 +854,7 @@ export function App() {
               </section>
             )}
 
-            {running && <div className="status">Running…</div>}
+            {running && <div className="status"><span className="spinner" aria-hidden="true" />Running…</div>}
             {runError && (
               <div className="run-error">
                 <div className="run-error-title">This recipe couldn't run on your files.</div>
@@ -695,7 +873,9 @@ export function App() {
                     <div className="card-header">
                       <h2>{prettify(t.name)}</h2>
                       <span className="count">{t.preview.rowCount.toLocaleString()} rows · {t.preview.columns.length} cols</span>
-                      <button className="btn ghost" onClick={() => downloadTable(t.name)}>Download CSV</button>
+                      <button className="btn ghost" disabled={exportingTable === t.name} onClick={() => downloadTable(t.name)}>
+                        {exportingTable === t.name ? <><span className="spinner" aria-hidden="true" />Preparing…</> : "Download CSV"}
+                      </button>
                     </div>
                     <DataTable preview={t.preview} />
                   </div>
@@ -709,8 +889,8 @@ export function App() {
             {script && (
               <>
                 <div className="save-bar">
-                  <button className="btn primary" onClick={saveToLibrary}>
-                    {currentRecipeId ? "Save new version" : "Save to library"}
+                  <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
+                    {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : currentRecipeId ? "Save new version" : "Save to library"}
                   </button>
                   {libMsg && <span className="saved-msg">{libMsg}</span>}
                 </div>

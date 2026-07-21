@@ -82,7 +82,7 @@ export function AuthModal({
             />
             {error && <div className="field-error">{error}</div>}
             <button className="btn primary modal-action" disabled={busy || !email.trim()} onClick={sendCode}>
-              {busy ? "Sending…" : "Email me a code"}
+              {busy ? <><span className="spinner" aria-hidden="true" />Sending…</> : "Email me a code"}
             </button>
           </>
         ) : (
@@ -107,7 +107,7 @@ export function AuthModal({
             )}
             {error && <div className="field-error">{error}</div>}
             <button className="btn primary modal-action" disabled={busy || code.length < 6} onClick={verify}>
-              {busy ? "Verifying…" : "Verify & sign in"}
+              {busy ? <><span className="spinner" aria-hidden="true" />Verifying…</> : "Verify & sign in"}
             </button>
             <button className="linklike modal-back" onClick={() => { setStep("email"); setCode(""); setError(null); }}>
               Use a different email

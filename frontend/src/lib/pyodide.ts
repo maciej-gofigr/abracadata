@@ -54,6 +54,10 @@ class PyWorker {
     return this.call<null>({ type: "renameInput", oldAlias, alias });
   }
 
+  removeInput(alias: string) {
+    return this.call<null>({ type: "removeInput", alias });
+  }
+
   runScript(source: string, params: Record<string, unknown>) {
     return this.call<RunResult>({
       type: "runScript",
@@ -64,6 +68,25 @@ class PyWorker {
 
   exportTable(name: string) {
     return this.call<{ csv: string }>({ type: "exportTable", table: name });
+  }
+
+  // --- Agent tools (return the raw tool result, including {ok:false} errors) ---
+
+  previewRows(alias: string, n = 5) {
+    return this.call<any>({ type: "previewRows", alias, n });
+  }
+
+  columnProfile(alias: string, column: string) {
+    return this.call<any>({ type: "columnProfile", alias, column });
+  }
+
+  runRecipeTest(script: string, params: Record<string, unknown>, includeValues: boolean) {
+    return this.call<any>({
+      type: "runRecipeTest",
+      script,
+      params: JSON.stringify(params ?? {}),
+      includeValues,
+    });
   }
 }
 

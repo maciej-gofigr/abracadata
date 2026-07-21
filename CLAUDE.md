@@ -54,11 +54,14 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
 
 1. **File in** → `App.handleFiles` → `pyWorker.loadInput`, which runs pandas `read_csv`/`read_excel` in
    the web worker and returns a `TablePreview`. Files never leave the browser.
-2. **Prompt** → `App.generate` → `generateRecipe` (`frontend/src/lib/api.ts`) streams the chat history +
-   dataset schema to `POST /generate`. The backend (`backend/app/generate.py`) calls Claude on Bedrock and
-   streams back a plain-language explanation, exactly one `python` code block defining
-   `transform(inputs, params)`, and one `json` block describing adjustable **knobs**. `extract_script` /
-   `extract_params` pull those out of the last blocks.
+2. **Prompt** → an **agent loop** owned by the frontend (`frontend/src/lib/agent.ts`, driven from
+   `App.driveAgent`). `POST /generate` (`backend/app/generate.py`) is a *stateless per-turn oracle*: one
+   Bedrock Converse call with tool use that returns either tool calls to run or a final recipe. The tools
+   (`preview_rows`, `column_profile`, `run_recipe`, `ask_user`, `submit_recipe`) execute in the Pyodide
+   worker; `run_recipe` lets the model **test its draft on the real data and fix errors before submitting**.
+   The frontend runs each tool, appends results to the transcript, and re-posts until `submit_recipe`
+   (final) or `ask_user` (a clarifying question). Data-value tools are gated by the user's data-access
+   toggle. See docs/agent-harness-design.md.
 3. **Run** → `App.runScript` → `pyWorker.runScript` `exec`s the script, calls `transform(inputs, params)`,
    and returns `{tables, plots}`. Plot figures are plain Plotly dicts built in Python and rendered by
    Plotly.js on the main thread (`frontend/src/lib/plot.ts`) — Plotly is **not** installed in Pyodide.
@@ -70,8 +73,10 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
 
 - **Python runs only in the web worker** (`frontend/src/lib/pyodideWorker.ts`), never on the UI thread.
   The worker owns the single Pyodide instance; its `BOOTSTRAP` string holds all Python entry points
-  (`load_input`, `run_script`, `export_table`, `rename_input`), each returning a JSON string with an `ok`
-  flag so tracebacks surface as readable errors. Input/output DataFrames live in the worker's `_state`
+  (`load_input`, `run_script`, `export_table`, `rename_input`, and the agent tools `preview_rows`,
+  `column_profile`, `run_recipe_test`), each returning a JSON string with an `ok` flag so tracebacks
+  surface as readable errors. Agent-tool calls resolve with their full result (including `{ok:false}`
+  errors) so the loop can feed a traceback back to the model. Input/output DataFrames live in the worker's `_state`
   dict — the UI only ever sees serialized previews. `frontend/src/lib/pyodide.ts` is the typed RPC bridge
   (`pyWorker` singleton); add a capability by extending `WorkerRequest` + a `BOOTSTRAP` fn + a dispatch
   branch + a `PyWorker` method.
@@ -84,12 +89,15 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
   "plots": {...}}` — 1+ tables, 0+ Plotly figure dicts. `plot_bar/plot_line/plot_scatter/plot_pie` helpers
   are injected into the recipe namespace (dependency-free — they return Plotly dicts; don't import plotly).
 - **Knobs** are inferred by the model: it reads adjustable scalars via `params.get("key", DEFAULT)` and
-  emits a `json` spec (name/label/type/default/…) that the UI renders as controls. Last-used values are
-  persisted alongside the recipe and restored on reopen.
-- **LLM contract** lives in `SYSTEM_PROMPT` in `backend/app/generate.py`. Generation uses **boto3
-  `bedrock-runtime` Converse** (streaming) — *not* the anthropic SDK, whose Bedrock clients fail in this
-  account. `BEDROCK_MODEL` defaults to `us.anthropic.claude-opus-4-6-v1`; `MOCK_GENERATE=1` returns a
-  canned recipe for offline/dev.
+  returns a spec (name/label/type/default/…) in the `submit_recipe` tool call, which the UI renders as
+  controls. Last-used values are persisted alongside the recipe and restored on reopen.
+- **Agent contract** lives in `SYSTEM_PROMPT` + the tool specs in `backend/app/generate.py`. Generation
+  uses **boto3 `bedrock-runtime` Converse tool use** (streaming) — *not* the anthropic SDK, whose Bedrock
+  clients fail in this account. The transcript is a neutral shape (`_to_converse` translates it); each turn
+  returns a typed SSE terminal (`tool_use` / `final` / `question` / `message` / `error`). Converse requires
+  alternating roles and paired tool_use/tool_result, so the frontend records a *final* as a plain assistant
+  turn (never a dangling `submit_recipe` call). `BEDROCK_MODEL` defaults to
+  `us.anthropic.claude-opus-4-6-v1`; `MOCK_GENERATE=1` returns a canned recipe for offline/dev.
 - **Auth is passwordless + optional** (`backend/app/auth.py`): email → 6-digit code. The `anon_id` cookie
   *is* the session (`backend/app/owner.py`); signing in links it to a `User` and **claims** the session's
   anonymous recipes. A recipe is owned by *either* an anon session or a user (`owner.py` resolves a

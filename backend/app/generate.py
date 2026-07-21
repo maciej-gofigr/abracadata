@@ -1,22 +1,29 @@
-"""Recipe generation via Claude on Amazon Bedrock (boto3 Converse, streaming).
+"""Agentic recipe generation via Claude on Amazon Bedrock (boto3 Converse tool use).
 
-The anthropic SDK's Bedrock clients don't work in this account (the Mantle
-endpoint 404s; the InvokeModel path is use-case-gated), so we call the
-bedrock-runtime Converse API directly with boto3. Model access is also narrower
-than the model listing — ``us.anthropic.claude-opus-4-6-v1`` is the best
-Opus tier this account can reach today (override via BEDROCK_MODEL).
+The backend is a **stateless, per-turn oracle**: each POST /generate is exactly one
+Converse call. It returns either tool calls for the *frontend* to execute (against the
+data in the browser's Pyodide worker) or a final recipe. The frontend owns the agent
+loop and re-posts the growing transcript each turn. See docs/agent-harness-design.md.
 
-This endpoint generates recipe *scripts*; it never executes them.
+The backend never executes user code — tools run in the sandboxed worker client-side.
+
+The anthropic SDK's Bedrock clients don't work in this account, so we call
+bedrock-runtime Converse directly with boto3. ``us.anthropic.claude-opus-4-6-v1`` is
+the best Opus tier this account reaches today (override via BEDROCK_MODEL).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import random
 import re
+import time
 from typing import Any, Iterator
 
 import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -24,82 +31,250 @@ from pydantic import BaseModel
 router = APIRouter()
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
-BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "us.anthropic.claude-opus-4-6-v1")
+# Sonnet 4.6 via the GLOBAL cross-region profile: fast, and this account has invoke
+# access (sonnet-5 / opus-4-8 are AccessDenied here). "global." routes across more
+# regions than "us." → better on-demand capacity / less throttling. Override via env.
+BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "global.anthropic.claude-sonnet-4-6")
+MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "8192"))
 
-_bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
+# Adaptive retries add client-side throttle handling on top of our own backoff —
+# the agent makes several Converse calls per generation, so throttling matters.
+_bedrock = boto3.client(
+    "bedrock-runtime",
+    region_name=AWS_REGION,
+    config=Config(
+        retries={"max_attempts": 8, "mode": "adaptive"},
+        connect_timeout=10,
+        read_timeout=300,
+    ),
+)
 
-SYSTEM_PROMPT = """You are the code generator inside a data-transformation tool for non-technical office workers. The user has loaded one or more tabular files (each a pandas DataFrame) and describes what they want in plain language.
+# Bedrock capacity/rate errors that are worth retrying with backoff.
+_TRANSIENT = {
+    "ThrottlingException",
+    "ServiceUnavailableException",
+    "TooManyRequestsException",
+    "ModelNotReadyException",
+    "ModelTimeoutException",
+}
 
-Respond with a short plain-language explanation of what the recipe does (1-3 sentences, no jargon), then exactly one Python code block containing the complete script, then one JSON code block describing the adjustable settings (details below).
 
-Requirements for the script:
-- Define: def transform(inputs: dict, params: dict) -> dict
-- `inputs` is keyed by the aliases listed in the message (e.g. inputs["orders"]). `params` holds adjustable values the user can tweak later.
-- Return {"tables": {name: DataFrame, ...}, "plots": {name: figure, ...}} — 1 or more tables, 0 or more plots. Names are short, human-readable strings.
-- For charts, call these helpers (already in scope — do NOT import or redefine them, and do NOT import plotly):
+def _error_code(exc: Exception) -> str:
+    resp = getattr(exc, "response", None)
+    if isinstance(resp, dict):
+        return resp.get("Error", {}).get("Code", "")
+    return ""
+
+
+def _is_transient(exc: Exception) -> bool:
+    return _error_code(exc) in _TRANSIENT or "Too many connections" in str(exc)
+
+
+def _converse_stream(**kwargs: Any) -> Any:
+    """converse_stream with exponential backoff for capacity/throttle errors."""
+    delay = 1.0
+    last: Exception | None = None
+    for attempt in range(5):
+        try:
+            return _bedrock.converse_stream(**kwargs)
+        except ClientError as exc:
+            last = exc
+            if _is_transient(exc) and attempt < 4:
+                time.sleep(min(delay, 12) + random.uniform(0, 0.5))
+                delay *= 2
+                continue
+            raise
+    assert last is not None
+    raise last
+
+
+def _friendly_error(exc: Exception) -> str:
+    if _is_transient(exc):
+        return "The AI service is busy right now — please wait a few seconds and try again."
+    return f"{type(exc).__name__}: {exc}"
+
+SYSTEM_PROMPT = """You are the recipe agent inside a data-transformation tool for non-technical office workers. The user loaded one or more tabular files (each a pandas DataFrame) and describes what they want in plain language. Your job: produce ONE tested pandas recipe.
+
+You work in a loop using tools. A good loop is: understand the request → (optionally) inspect the data → write the transform → TEST it with run_recipe → fix any error → submit_recipe. Simple requests may need no inspection and one test.
+
+TOOLS
+- preview_rows(alias, n): see the first n real rows of an input — use to learn actual value formats (dates, "$1,200" strings, casing). (Only available when the user allows data access.)
+- column_profile(alias, column): for a text column, unique count + most common values; for a numeric column, min/max/mean + null count. Use to learn exact category labels to group/filter by, to check join keys match across files, and to spot values needing cleanup. (Only when data access is allowed.)
+- run_recipe(script, params?): RUN your candidate transform on the real data. Returns output table shapes (and a small sample of rows, if data access is allowed) OR the Python error traceback. ALWAYS run_recipe and see it succeed before submitting. If it errors, read the traceback, fix the script, and run again.
+- ask_user(question): ask ONE short clarifying question — ONLY when the request is genuinely ambiguous and no reasonable default exists. Strongly prefer making a sensible assumption and letting the user revise later.
+- submit_recipe(explanation, script, params): finish. Call ONLY after run_recipe succeeded on the current script.
+
+THE RECIPE (the `script` you write and submit)
+- Define exactly: def transform(inputs: dict, params: dict) -> dict
+- `inputs` is keyed by the aliases in the dataset context (e.g. inputs["orders"]). `params` holds adjustable values.
+- Return {"tables": {name: DataFrame, ...}, "plots": {name: figure, ...}} — 1+ tables, 0+ plots; names are short and human-readable.
+- Charts: call these helpers (already in scope — do NOT import or redefine them, and do NOT import plotly):
     plot_bar(x, y, title=None, xlabel=None, ylabel=None)
     plot_line(x, y, title=None, xlabel=None, ylabel=None)
     plot_scatter(x, y, title=None, xlabel=None, ylabel=None)
     plot_pie(labels, values, title=None)
   They return Plotly figure dicts.
-- Use only pandas, numpy, and the Python standard library. No file or network I/O — operate only on the DataFrames in `inputs`.
-- Be robust to messy real-world data (strip whitespace when matching strings, coerce types when needed), but never silently drop data unless the user asked for a filter.
-- When revising a previous script, return the full updated script, not a diff.
-- Put `import pandas as pd` at the top.
+- Use only pandas, numpy, and the Python standard library. No file or network I/O. `import pandas as pd` at the top.
+- Be robust to messy real-world data (strip whitespace, coerce types), but never silently drop data unless the user asked for a filter.
 
-Adjustable settings (knobs):
-- Identify simple scalar values a non-technical user might reasonably want to change later WITHOUT re-describing the recipe: thresholds, a group-by column, a top-N count, a date cutoff, an on/off toggle. Prefer 0-4 of the most useful; do not invent knobs that aren't central to the request.
-- In the script, read each knob from `params` using `params.get("key", DEFAULT)` where DEFAULT is the value you'd otherwise hardcode, and reference that same key consistently. Using `.get` with a default means the recipe still runs if a value is absent.
-- After the Python code block, output ONE fenced code block tagged `json` containing a JSON array describing those knobs, so the tool can render them as controls. Each entry is an object:
-    {"name": the exact params key, "label": short human label, "type": "number"|"currency"|"date"|"enum"|"bool"|"text", "default": the default value}
-  Optional per entry: "options" (array of strings, REQUIRED for "enum"), "min"/"max"/"step" (for number/currency), "help" (a short hint, no jargon).
-  Use "currency" for money amounts and "enum" (with "options") when the value must be one of a fixed set such as a column name to group by. Every knob's "name" MUST be a key the script reads from params. If there are no sensible knobs, output an empty array: []."""
+ADJUSTABLE SETTINGS (the `params` you submit)
+- Identify 0-4 simple scalars a non-technical user might tweak later WITHOUT re-describing the recipe: thresholds, a group-by column, a top-N count, a date cutoff, an on/off toggle. Don't invent knobs that aren't central to the request.
+- In the script, read each knob via params.get("key", DEFAULT) — using .get with a default means the recipe still runs if a value is absent.
+- submit_recipe's `params` is an array of objects: {"name": the exact params key, "label": short human label, "type": "number"|"currency"|"date"|"enum"|"bool"|"text", "default": the default value}. Optional: "options" (array of strings, REQUIRED for "enum"), "min"/"max"/"step" (number/currency), "help" (short hint). Use "currency" for money, "enum" (with options) for a value from a fixed set like a column name. Every knob's name must be a key the script reads. Use [] if there are no sensible knobs.
+
+Keep explanations plain and short (1-3 sentences, no jargon). When revising after user feedback, produce the full updated script and re-test it."""
 
 
+# --------------------------------------------------------------------------- #
+# Tool specs (Converse toolConfig)
+# --------------------------------------------------------------------------- #
+def _tool(name: str, description: str, props: dict, required: list[str]) -> dict:
+    return {
+        "toolSpec": {
+            "name": name,
+            "description": description,
+            "inputSchema": {"json": {"type": "object", "properties": props, "required": required}},
+        }
+    }
+
+
+_PREVIEW_ROWS = _tool(
+    "preview_rows",
+    "Get the first n real rows of an input table to see actual values and formats.",
+    {
+        "alias": {"type": "string", "description": "Input alias, e.g. 'orders'."},
+        "n": {"type": "integer", "description": "Rows to return (1-20).", "default": 5},
+    },
+    ["alias"],
+)
+_COLUMN_PROFILE = _tool(
+    "column_profile",
+    "Profile one column: text -> unique count + most common values; numeric -> min/max/mean + nulls.",
+    {"alias": {"type": "string"}, "column": {"type": "string"}},
+    ["alias", "column"],
+)
+_RUN_RECIPE = _tool(
+    "run_recipe",
+    "Run a candidate transform(inputs, params) on the real data. Returns output table shapes (and sample rows if allowed) or the Python traceback. Always test before submitting.",
+    {
+        "script": {"type": "string", "description": "Full Python script defining transform(inputs, params)."},
+        "params": {"type": "object", "description": "Optional param values to run with."},
+    },
+    ["script"],
+)
+_ASK_USER = _tool(
+    "ask_user",
+    "Ask the user ONE short clarifying question. Only when genuinely ambiguous; prefer a sensible assumption.",
+    {"question": {"type": "string"}},
+    ["question"],
+)
+_SUBMIT_RECIPE = _tool(
+    "submit_recipe",
+    "Submit the final, tested recipe. Call only after run_recipe succeeded on this script.",
+    {
+        "explanation": {"type": "string", "description": "1-3 plain-language sentences describing what the recipe does."},
+        "script": {"type": "string"},
+        "params": {"type": "array", "items": {"type": "object"}, "description": "Adjustable-knob specs (see system prompt)."},
+    },
+    ["explanation", "script"],
+)
+
+_EXECUTABLE_TOOLS = {"preview_rows", "column_profile", "run_recipe"}
+
+
+def _tool_config(allow_data_access: bool) -> dict:
+    tools = [_RUN_RECIPE, _ASK_USER, _SUBMIT_RECIPE]
+    if allow_data_access:
+        tools = [_PREVIEW_ROWS, _COLUMN_PROFILE] + tools
+    return {"tools": tools}
+
+
+# --------------------------------------------------------------------------- #
+# Request model + transcript -> Converse translation
+# --------------------------------------------------------------------------- #
 class InputSpec(BaseModel):
     alias: str
     columns: list[str] = []
     dtypes: list[str] = []
 
 
-class Message(BaseModel):
-    role: str
-    text: str
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    input: dict[str, Any] = {}
+
+
+class ToolResult(BaseModel):
+    id: str
+    ok: bool = True
+    content: Any = None
+
+
+class TurnMessage(BaseModel):
+    role: str  # "user" | "assistant" | "tool"
+    text: str | None = None
+    tool_calls: list[ToolCall] = []
+    results: list[ToolResult] = []
 
 
 class GenerateRequest(BaseModel):
     inputs: list[InputSpec] = []
-    params: dict[str, Any] = {}
-    messages: list[Message] = []
+    allow_data_access: bool = True
+    transcript: list[TurnMessage] = []
 
 
-def _dataset_context(inputs: list[InputSpec], params: dict[str, Any]) -> str:
-    lines = [
-        "The user has loaded these input tables (reference them by alias inside transform(inputs, params)):",
-    ]
+def _dataset_context(inputs: list[InputSpec], allow_data_access: bool) -> str:
+    lines = ["The user loaded these input tables (reference them by alias inside transform(inputs, params)):"]
     for inp in inputs:
         cols = ", ".join(
             f"{c} ({t})" for c, t in zip(inp.columns, inp.dtypes or [""] * len(inp.columns))
         )
         lines.append(f'- inputs["{inp.alias}"]: {cols}')
-    if params:
-        lines.append("Current parameters (the params dict): " + json.dumps(params))
+    if not allow_data_access:
+        lines.append(
+            "The user has turned OFF data access: preview_rows/column_profile are unavailable and run_recipe "
+            "returns only shapes (no cell values). Rely on the schema above and on run_recipe's shapes/errors."
+        )
     return "\n".join(lines)
 
 
-def _build_messages(req: GenerateRequest) -> list[dict[str, Any]]:
-    ctx = _dataset_context(req.inputs, req.params)
+def _as_json_obj(value: Any) -> Any:
+    return value if isinstance(value, (dict, list)) else {"value": value}
+
+
+def _to_converse(req: GenerateRequest) -> list[dict[str, Any]]:
+    ctx = _dataset_context(req.inputs, req.allow_data_access)
     out: list[dict[str, Any]] = []
-    for i, m in enumerate(req.messages):
-        text = m.text
-        if i == 0 and m.role == "user" and (req.inputs or req.params):
-            text = f"{ctx}\n\nUser request: {m.text}"
-        out.append({"role": m.role, "content": [{"text": text}]})
+    first_user = True
+    for m in req.transcript:
+        if m.role == "user":
+            text = m.text or ""
+            if first_user and req.inputs:
+                text = f"{ctx}\n\nUser request: {text}"
+            first_user = False
+            out.append({"role": "user", "content": [{"text": text}]})
+        elif m.role == "assistant":
+            content: list[dict[str, Any]] = []
+            if m.text:
+                content.append({"text": m.text})
+            for c in m.tool_calls:
+                content.append({"toolUse": {"toolUseId": c.id, "name": c.name, "input": c.input}})
+            out.append({"role": "assistant", "content": content or [{"text": ""}]})
+        elif m.role == "tool":
+            content = []
+            for r in m.results:
+                if r.ok:
+                    content.append({"toolResult": {"toolUseId": r.id, "content": [{"json": _as_json_obj(r.content)}], "status": "success"}})
+                else:
+                    content.append({"toolResult": {"toolUseId": r.id, "content": [{"text": str(r.content)}], "status": "error"}})
+            out.append({"role": "user", "content": content})
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Lenient fallback parsing (model returned prose/code instead of submit_recipe)
+# --------------------------------------------------------------------------- #
 def _code_blocks(text: str) -> list[tuple[str, str]]:
-    """All fenced blocks as (lang, body); lang is "" for untagged fences."""
     return [
         (lang.lower(), body)
         for lang, body in re.findall(r"```([A-Za-z0-9_+-]*)[ \t]*\n(.*?)```", text, re.DOTALL)
@@ -108,8 +283,6 @@ def _code_blocks(text: str) -> list[tuple[str, str]]:
 
 def extract_script(text: str) -> str | None:
     blocks = _code_blocks(text)
-    # Prefer the last python/untagged block that actually defines transform,
-    # so a trailing ```json knob block is never mistaken for the script.
     for lang, body in reversed(blocks):
         if lang in ("", "python", "py") and "def transform" in body:
             return body.strip()
@@ -123,7 +296,6 @@ _ALLOWED_PARAM_TYPES = {"number", "currency", "date", "enum", "bool", "text"}
 
 
 def _sanitize_params(data: Any) -> list[dict[str, Any]]:
-    """Keep only well-formed knob specs matching the frontend RecipeParam shape."""
     if not isinstance(data, list):
         return []
     out: list[dict[str, Any]] = []
@@ -137,7 +309,7 @@ def _sanitize_params(data: Any) -> list[dict[str, Any]]:
         if ptype not in _ALLOWED_PARAM_TYPES:
             ptype = "text"
         if ptype == "enum" and not (isinstance(item.get("options"), list) and item["options"]):
-            continue  # an enum with no options can't render a control
+            continue
         knob: dict[str, Any] = {
             "name": name,
             "label": item.get("label") if isinstance(item.get("label"), str) and item.get("label") else name,
@@ -148,7 +320,7 @@ def _sanitize_params(data: Any) -> list[dict[str, Any]]:
             if item.get(key) is not None:
                 knob[key] = item[key]
         out.append(knob)
-        if len(out) >= 8:  # cap the number of controls
+        if len(out) >= 8:
             break
     return out
 
@@ -163,22 +335,82 @@ def extract_params(text: str) -> list[dict[str, Any]]:
     return []
 
 
-def _stream_deltas(system: str, messages: list[dict[str, Any]]) -> Iterator[str]:
-    resp = _bedrock.converse_stream(
+def _strip_code(text: str) -> str:
+    return re.sub(r"```[\s\S]*?```", "", text).strip()
+
+
+# --------------------------------------------------------------------------- #
+# One streamed Converse turn -> (text deltas, assembled assistant blocks, stop)
+# --------------------------------------------------------------------------- #
+def _stream_turn(system: str, messages: list[dict[str, Any]], tool_config: dict) -> Iterator[Any]:
+    """Yield ('text', delta) for each text delta, then ('done', blocks, stop_reason)."""
+    resp = _converse_stream(
         modelId=BEDROCK_MODEL,
         system=[{"text": system}],
         messages=messages,
-        inferenceConfig={"maxTokens": 4096},
+        toolConfig=tool_config,
+        inferenceConfig={"maxTokens": MAX_TOKENS},
     )
+    blocks: dict[int, dict[str, Any]] = {}
+    stop = "end_turn"
     for event in resp["stream"]:
-        delta = event.get("contentBlockDelta", {}).get("delta", {})
-        if "text" in delta:
-            yield delta["text"]
+        if "contentBlockStart" in event:
+            e = event["contentBlockStart"]
+            start = e.get("start", {})
+            if "toolUse" in start:
+                blocks[e["contentBlockIndex"]] = {
+                    "type": "tool",
+                    "id": start["toolUse"]["toolUseId"],
+                    "name": start["toolUse"]["name"],
+                    "input": "",
+                }
+        elif "contentBlockDelta" in event:
+            e = event["contentBlockDelta"]
+            idx = e["contentBlockIndex"]
+            d = e["delta"]
+            if "text" in d:
+                b = blocks.setdefault(idx, {"type": "text", "text": ""})
+                b["text"] += d["text"]
+                yield ("text", d["text"])
+            elif "toolUse" in d:
+                blocks[idx]["input"] += d["toolUse"].get("input", "")
+        elif "messageStop" in event:
+            stop = event["messageStop"].get("stopReason", stop)
+
+    assembled: list[dict[str, Any]] = []
+    for idx in sorted(blocks):
+        b = blocks[idx]
+        if b["type"] == "text":
+            if b["text"]:
+                assembled.append({"text": b["text"]})
+        else:
+            inp: Any = {}
+            if b["input"].strip():
+                try:
+                    inp = json.loads(b["input"])
+                except Exception:
+                    inp = {}
+            assembled.append({"toolUse": {"toolUseId": b["id"], "name": b["name"], "input": inp}})
+    yield ("done", assembled, stop)
 
 
-# A canned recipe for MOCK_GENERATE=1 — lets the frontend/integration be
-# exercised without a live Bedrock call (e.g. offline dev, or while account
-# model-access is being provisioned). Never used unless the env var is set.
+def _sse(obj: dict[str, Any]) -> str:
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+def _assistant_neutral(blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    text = "".join(b["text"] for b in blocks if "text" in b)
+    calls = [
+        {"id": b["toolUse"]["toolUseId"], "name": b["toolUse"]["name"], "input": b["toolUse"]["input"]}
+        for b in blocks
+        if "toolUse" in b
+    ]
+    return {"role": "assistant", "text": text or None, "tool_calls": calls}
+
+
+# --------------------------------------------------------------------------- #
+# Mock (offline / docker without AWS): submit a canned recipe on turn 1.
+# --------------------------------------------------------------------------- #
 _MOCK_RECIPE = '''import pandas as pd
 
 def transform(inputs, params):
@@ -193,43 +425,88 @@ def transform(inputs, params):
     chart = plot_pie(summary["Segment"], summary["Total Revenue"], title="Revenue share by segment")
     return {"tables": {"By segment": summary}, "plots": {"Revenue by segment": chart}}'''
 
-_MOCK_PARAMS = (
-    '[{"name": "min_amount", "label": "Minimum order amount", "type": "currency", '
-    '"default": 0, "min": 0, "step": 50, "help": "Orders below this are dropped"}]'
-)
+_MOCK_PARAMS = [
+    {"name": "min_amount", "label": "Minimum order amount", "type": "currency", "default": 0, "min": 0, "step": 50, "help": "Orders below this are dropped"}
+]
 
 
 @router.post("/generate")
 def generate(req: GenerateRequest) -> StreamingResponse:
     if os.environ.get("MOCK_GENERATE"):
         def mock() -> Iterator[str]:
-            yield f"data: {json.dumps({'text': 'Here is a recipe that joins your orders to customers and shows revenue share by segment as a pie chart.'})}\n\n"
-            block = f"```python\n{_MOCK_RECIPE}\n```\n\n```json\n{_MOCK_PARAMS}\n```"
-            yield f"data: {json.dumps({'text': block})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'script': extract_script(block), 'params': extract_params(block)})}\n\n"
-
+            yield _sse({"text": "Joining orders to customers and charting revenue share by segment."})
+            yield _sse({
+                "type": "final",
+                "assistant": {"role": "assistant", "text": None, "tool_calls": [{"id": "mock", "name": "submit_recipe", "input": {}}]},
+                "submit_id": "mock",
+                "script": _MOCK_RECIPE,
+                "params": _MOCK_PARAMS,
+                "explanation": "Joins orders to customers and shows revenue share by segment as a pie chart.",
+            })
         return StreamingResponse(mock(), media_type="text/event-stream")
 
-    if not req.messages:
-        # nothing to do — return a one-shot SSE error
+    if not req.transcript:
         def empty() -> Iterator[str]:
-            yield f"data: {json.dumps({'error': 'no message provided'})}\n\n"
-
+            yield _sse({"type": "error", "error": "no message provided"})
         return StreamingResponse(empty(), media_type="text/event-stream")
 
-    system = SYSTEM_PROMPT
-    messages = _build_messages(req)
+    messages = _to_converse(req)
+    tool_config = _tool_config(req.allow_data_access)
 
     def gen() -> Iterator[str]:
-        acc: list[str] = []
+        blocks: list[dict[str, Any]] = []
         try:
-            for delta in _stream_deltas(system, messages):
-                acc.append(delta)
-                yield f"data: {json.dumps({'text': delta})}\n\n"
-        except Exception as exc:  # surface Bedrock/credential errors to the client
-            yield f"data: {json.dumps({'error': f'{type(exc).__name__}: {exc}'})}\n\n"
+            for ev in _stream_turn(SYSTEM_PROMPT, messages, tool_config):
+                if ev[0] == "text":
+                    yield _sse({"text": ev[1]})
+                else:
+                    blocks = ev[1]
+        except Exception as exc:
+            yield _sse({"type": "error", "error": _friendly_error(exc)})
             return
-        full = "".join(acc)
-        yield f"data: {json.dumps({'done': True, 'script': extract_script(full), 'params': extract_params(full)})}\n\n"
+
+        assistant = _assistant_neutral(blocks)
+        tool_uses = {c["name"]: c for c in assistant["tool_calls"]}
+
+        if "submit_recipe" in tool_uses:
+            inp = tool_uses["submit_recipe"]["input"] or {}
+            yield _sse({
+                "type": "final",
+                "assistant": assistant,
+                "submit_id": tool_uses["submit_recipe"]["id"],
+                "script": inp.get("script") or "",
+                "params": _sanitize_params(inp.get("params") or []),
+                "explanation": inp.get("explanation") or (assistant["text"] or "").strip(),
+            })
+            return
+
+        if "ask_user" in tool_uses:
+            yield _sse({
+                "type": "question",
+                "assistant": assistant,
+                "ask_id": tool_uses["ask_user"]["id"],
+                "question": tool_uses["ask_user"]["input"].get("question", ""),
+            })
+            return
+
+        exec_calls = [c for c in assistant["tool_calls"] if c["name"] in _EXECUTABLE_TOOLS]
+        if exec_calls:
+            yield _sse({"type": "tool_use", "assistant": assistant, "calls": exec_calls})
+            return
+
+        # Lenient fallback: model replied with prose/code instead of a tool call.
+        full = assistant["text"] or ""
+        script = extract_script(full)
+        if script:
+            yield _sse({
+                "type": "final",
+                "assistant": assistant,
+                "submit_id": None,
+                "script": script,
+                "params": extract_params(full),
+                "explanation": _strip_code(full),
+            })
+        else:
+            yield _sse({"type": "message", "assistant": assistant, "text": full})
 
     return StreamingResponse(gen(), media_type="text/event-stream")

@@ -84,51 +84,121 @@ def rename_input(old, new):
     except Exception:
         return json.dumps({"ok": False, "error": traceback.format_exc(limit=3)})
 
+def remove_input(alias):
+    try:
+        _state["inputs"].pop(alias, None)
+        return json.dumps({"ok": True})
+    except Exception:
+        return json.dumps({"ok": False, "error": traceback.format_exc(limit=2)})
+
+def _execute(source, params):
+    """exec the recipe, call transform(...), and normalize to (tables, plots)."""
+    inputs = _state["inputs"]
+    if not inputs:
+        raise RuntimeError("No input files loaded yet.")
+    ns = {}
+    exec(PLOT_HELPERS, ns)
+    exec(source, ns)
+    fn = ns.get("transform")
+    if not callable(fn):
+        raise ValueError("Your recipe must define a transform(...) function.")
+    copied = {k: v.copy() for k, v in inputs.items()}
+    nargs = len(inspect.signature(fn).parameters)
+    if nargs >= 2:
+        result = fn(copied, params)
+    elif nargs == 1:
+        result = fn(next(iter(copied.values()))) if len(copied) == 1 else fn(copied)
+    else:
+        result = fn()
+    tables, plots = {}, {}
+    if isinstance(result, pd.DataFrame):
+        tables["result"] = result
+    elif isinstance(result, dict) and ("tables" in result or "plots" in result):
+        for nm, df in (result.get("tables") or {}).items():
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError("Table '" + str(nm) + "' is not a DataFrame.")
+            tables[str(nm)] = df
+        for nm, fig in (result.get("plots") or {}).items():
+            plots[str(nm)] = fig
+    elif isinstance(result, dict):
+        for nm, df in result.items():
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError("transform() must return a DataFrame or a {tables, plots} dict.")
+            tables[str(nm)] = df
+    else:
+        raise TypeError("transform() must return a DataFrame or a {tables, plots} dict.")
+    if not tables:
+        raise ValueError("transform() produced no output tables.")
+    return tables, plots
+
 def run_script(source, params_json):
     try:
-        inputs = _state["inputs"]
-        if not inputs:
-            raise RuntimeError("No input files loaded yet.")
         params = json.loads(params_json) if params_json else {}
-        ns = {}
-        exec(PLOT_HELPERS, ns)
-        exec(source, ns)
-        fn = ns.get("transform")
-        if not callable(fn):
-            raise ValueError("Your recipe must define a transform(...) function.")
-        copied = {k: v.copy() for k, v in inputs.items()}
-        nargs = len(inspect.signature(fn).parameters)
-        if nargs >= 2:
-            result = fn(copied, params)
-        elif nargs == 1:
-            result = fn(next(iter(copied.values()))) if len(copied) == 1 else fn(copied)
-        else:
-            result = fn()
-        tables, plots = {}, {}
-        if isinstance(result, pd.DataFrame):
-            tables["result"] = result
-        elif isinstance(result, dict) and ("tables" in result or "plots" in result):
-            for nm, df in (result.get("tables") or {}).items():
-                if not isinstance(df, pd.DataFrame):
-                    raise TypeError("Table '" + str(nm) + "' is not a DataFrame.")
-                tables[str(nm)] = df
-            for nm, fig in (result.get("plots") or {}).items():
-                plots[str(nm)] = fig
-        elif isinstance(result, dict):
-            for nm, df in result.items():
-                if not isinstance(df, pd.DataFrame):
-                    raise TypeError("transform() must return a DataFrame or a {tables, plots} dict.")
-                tables[str(nm)] = df
-        else:
-            raise TypeError("transform() must return a DataFrame or a {tables, plots} dict.")
-        if not tables:
-            raise ValueError("transform() produced no output tables.")
+        tables, plots = _execute(source, params)
         _state["outputs"] = tables
         return json.dumps({
             "ok": True,
             "tables": [{"name": nm, "preview": _preview(df)} for nm, df in tables.items()],
             "plots": [{"name": nm, "figure": fig} for nm, fig in plots.items()],
         }, default=_json_default)
+    except Exception:
+        return json.dumps({"ok": False, "error": traceback.format_exc(limit=5)})
+
+# --- Agent tools (executed here, results returned to the model) ---
+
+def preview_rows(alias, n):
+    try:
+        df = _state["inputs"].get(alias)
+        if df is None:
+            return json.dumps({"ok": False, "error": "No input named '" + str(alias) + "'. Available: " + ", ".join(_state["inputs"].keys())})
+        n = max(1, min(int(n or 5), 20))
+        head = df.head(n)
+        return json.dumps({
+            "ok": True,
+            "columns": [str(c) for c in df.columns],
+            "rows": json.loads(head.to_json(orient="values", date_format="iso")),
+            "row_count": int(len(df)),
+        }, default=_json_default)
+    except Exception:
+        return json.dumps({"ok": False, "error": traceback.format_exc(limit=2)})
+
+def column_profile(alias, column):
+    try:
+        df = _state["inputs"].get(alias)
+        if df is None:
+            return json.dumps({"ok": False, "error": "No input named '" + str(alias) + "'."})
+        if column not in df.columns:
+            return json.dumps({"ok": False, "error": "No column '" + str(column) + "' in '" + str(alias) + "'. Columns: " + ", ".join(str(c) for c in df.columns)})
+        s = df[column]
+        out = {"ok": True, "column": str(column), "dtype": str(s.dtype),
+               "null_count": int(s.isna().sum()), "count": int(len(s))}
+        if pd.api.types.is_numeric_dtype(s):
+            d = s.dropna()
+            out["kind"] = "numeric"
+            if len(d):
+                out["min"] = float(d.min()); out["max"] = float(d.max()); out["mean"] = float(d.mean())
+        else:
+            out["kind"] = "categorical"
+            out["unique_count"] = int(s.nunique(dropna=True))
+            vc = s.astype("string").str.strip().value_counts().head(15)
+            out["top_values"] = [
+                {"value": (None if pd.isna(k) else str(k)), "count": int(v)} for k, v in vc.items()
+            ]
+        return json.dumps(out, default=_json_default)
+    except Exception:
+        return json.dumps({"ok": False, "error": traceback.format_exc(limit=2)})
+
+def run_recipe_test(source, params_json, include_values):
+    try:
+        params = json.loads(params_json) if params_json else {}
+        tables, plots = _execute(source, params)
+        summary = []
+        for nm, df in tables.items():
+            t = {"name": nm, "columns": [str(c) for c in df.columns], "row_count": int(len(df))}
+            if include_values:
+                t["head"] = json.loads(df.head(5).to_json(orient="records", date_format="iso"))
+            summary.append(t)
+        return json.dumps({"ok": True, "tables": summary, "plots": [str(k) for k in plots]}, default=_json_default)
     except Exception:
         return json.dumps({"ok": False, "error": traceback.format_exc(limit=5)})
 
@@ -144,7 +214,17 @@ def export_table(name):
 
 interface WorkerRequest {
   id: number;
-  type: "init" | "clearInputs" | "loadInput" | "renameInput" | "runScript" | "exportTable";
+  type:
+    | "init"
+    | "clearInputs"
+    | "loadInput"
+    | "renameInput"
+    | "removeInput"
+    | "runScript"
+    | "exportTable"
+    | "previewRows"
+    | "columnProfile"
+    | "runRecipeTest";
   alias?: string;
   oldAlias?: string;
   name?: string;
@@ -152,7 +232,14 @@ interface WorkerRequest {
   script?: string;
   params?: string;
   table?: string;
+  column?: string;
+  n?: number;
+  includeValues?: boolean;
 }
+
+// Agent-tool calls resolve with the full result (including {ok:false} errors like
+// a run_recipe traceback) so the loop can feed the error back to the model.
+const TOOL_TYPES = new Set(["previewRows", "columnProfile", "runRecipeTest"]);
 
 const ctx = self as unknown as {
   postMessage(msg: unknown): void;
@@ -199,6 +286,10 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const fn = py.globals.get("rename_input");
       raw = fn(msg.oldAlias, msg.alias);
       fn.destroy();
+    } else if (msg.type === "removeInput") {
+      const fn = py.globals.get("remove_input");
+      raw = fn(msg.alias);
+      fn.destroy();
     } else if (msg.type === "runScript") {
       const fn = py.globals.get("run_script");
       raw = fn(msg.script, msg.params ?? "");
@@ -207,9 +298,21 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const fn = py.globals.get("export_table");
       raw = fn(msg.table);
       fn.destroy();
+    } else if (msg.type === "previewRows") {
+      const fn = py.globals.get("preview_rows");
+      raw = fn(msg.alias, msg.n ?? 5);
+      fn.destroy();
+    } else if (msg.type === "columnProfile") {
+      const fn = py.globals.get("column_profile");
+      raw = fn(msg.alias, msg.column);
+      fn.destroy();
+    } else if (msg.type === "runRecipeTest") {
+      const fn = py.globals.get("run_recipe_test");
+      raw = fn(msg.script, msg.params ?? "", msg.includeValues ?? true);
+      fn.destroy();
     }
     const parsed = JSON.parse(raw);
-    if (parsed.ok) {
+    if (TOOL_TYPES.has(msg.type) || parsed.ok) {
       ctx.postMessage({ id: msg.id, ok: true, payload: parsed });
     } else {
       ctx.postMessage({ id: msg.id, ok: false, error: parsed.error });

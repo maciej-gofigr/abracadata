@@ -1,62 +1,7 @@
 // Talks to the backend. In dev, Vite proxies /api to FastAPI; in prod, nginx does.
+// Recipe generation is an agent loop — see src/lib/agent.ts (it owns /api/generate).
 
-export interface GenerateBody {
-  inputs: { alias: string; columns: string[]; dtypes: string[] }[];
-  params: Record<string, unknown>;
-  messages: { role: string; text: string }[];
-}
-
-// The generation proxy streams SSE: {text} deltas, then {done, script} (or {error}).
-export async function generateRecipe(
-  body: GenerateBody,
-  onDelta: (text: string) => void,
-  onDone: (script: string | null, params: unknown) => void,
-  onError: (message: string) => void,
-): Promise<void> {
-  let resp: Response;
-  try {
-    resp = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    onError(`Couldn't reach the generator: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
-  if (!resp.ok || !resp.body) {
-    onError(`Generation request failed (${resp.status}).`);
-    return;
-  }
-
-  const reader = resp.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const raw = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      const line = raw.split("\n").find((l) => l.startsWith("data:"));
-      if (!line) continue;
-      let payload: { text?: string; error?: string; done?: boolean; script?: string | null; params?: unknown };
-      try {
-        payload = JSON.parse(line.slice(5).trim());
-      } catch {
-        continue;
-      }
-      if (payload.error) onError(payload.error);
-      else if (payload.done) onDone(payload.script ?? null, payload.params ?? []);
-      else if (payload.text) onDelta(payload.text);
-    }
-  }
-}
-
-/** Strip fenced code blocks for display — the code goes to the Script panel. */
+/** Strip fenced code blocks from streamed narration for display. */
 export function explanationOnly(text: string): string {
   return text.replace(/```[\s\S]*?```/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
