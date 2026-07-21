@@ -51,7 +51,7 @@ visible feedback — that dead end is gone.)
 
 | # | Observation | Severity | Note |
 |---|---|---|---|
-| A | AI-generated recipes expose **no adjustable knobs** — the params panel only appears for recipes that declared params (the sample, or reopened ones). Scalar-param inference from generated code isn't wired into `/generate` yet. | Med | Known future scope (PRD §2.7 knobs). Worth doing next; the UI already renders params generically. |
+| A | ~~AI-generated recipes expose **no adjustable knobs**.~~ **Resolved** — `/generate` now returns an inferred knob spec; the workspace renders them as typed controls. Verified live (a "revenue by region + min amount + top-N" request produced a `$` amount, a top-N number, and a Region/Segment dropdown, all re-running on change). | ~~Med~~ done | — |
 | B | Input preview tables can be tall (two side-by-side push the describe card down on first load). | Low | Could cap input previews to ~8 rows. |
 | C | No "modified since last save" affordance; every save makes a new version even if nothing changed. | Low | Cheap to add a dirty check. |
 | D | Iterating in the describe box appends to a growing conversation with no "start fresh." | Low | |
