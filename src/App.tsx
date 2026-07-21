@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { APP_NAME } from "./branding";
+import { AuthModal } from "./components/AuthModal";
 import { DataTable } from "./components/DataTable";
 import { DropZone } from "./components/DropZone";
 import { PlotView } from "./components/PlotView";
@@ -14,6 +15,8 @@ import {
 } from "./lib/fixtures";
 import {
   addVersion,
+  authLogout,
+  authMe,
   createRecipe,
   deleteRecipe,
   explanationOnly,
@@ -58,9 +61,13 @@ export function App() {
   const [renameDraft, setRenameDraft] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const [user, setUser] = useState<string | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+
   useEffect(() => {
     pyWorker.warmUp();
     void refreshLibrary();
+    void authMe().then((r) => setUser(r.email)).catch(() => {});
   }, []);
 
   async function refreshLibrary() {
@@ -341,6 +348,24 @@ export function App() {
     }
   }
 
+  async function onSignedIn(email: string) {
+    setUser(email);
+    setAuthOpen(false);
+    await refreshLibrary(); // ownership changed — show the account's library
+  }
+
+  async function signOut() {
+    try {
+      await authLogout();
+    } catch {
+      /* ignore */
+    }
+    setUser(null);
+    setCurrentRecipeId(null);
+    setVersions([]);
+    await refreshLibrary();
+  }
+
   function reset() {
     setInputs([]);
     setScript(null);
@@ -392,7 +417,12 @@ export function App() {
           <span className="count">saved &amp; versioned on the server — recipes only, never your data</span>
         </div>
         <div className="card-body">
-          <p className="reuse-hint">Next month, open one and drop your new files — it re-runs the same steps.</p>
+          <p className="reuse-hint">
+            Next month, open one and drop your new files — it re-runs the same steps.
+            {!user && (
+              <> · <button className="linklike" onClick={() => setAuthOpen(true)}>Sign in</button> to reach these from any device.</>
+            )}
+          </p>
           <ul className="recipe-list">
             {library.map((r) => (
               <li key={r.id} className={r.id === currentRecipeId ? "active" : ""}>
@@ -478,10 +508,20 @@ export function App() {
         <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle light and dark theme" title="Toggle theme">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
         </button>
+        {user ? (
+          <span className="account">
+            <span className="account-email" title={user}>{user}</span>
+            <button className="btn ghost" onClick={signOut}>Sign out</button>
+          </span>
+        ) : (
+          <button className="btn" onClick={() => setAuthOpen(true)}>Sign in</button>
+        )}
         {hasInputs && (
           <button className="btn ghost" onClick={reset}>Start over</button>
         )}
       </div>
+
+      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSignedIn={onSignedIn} />}
 
       <main>
         {!hasInputs && (

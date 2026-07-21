@@ -61,6 +61,44 @@ export function explanationOnly(text: string): string {
   return text.replace(/```[\s\S]*?```/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// ---------- auth (passwordless email code) ----------
+
+export function authMe(): Promise<{ email: string | null }> {
+  return fetch("/api/auth/me", { credentials: "include" }).then(j<{ email: string | null }>);
+}
+
+export function authRequest(email: string): Promise<{ sent: boolean; dev_code: string | null }> {
+  return fetch("/api/auth/request", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email }),
+  }).then(async (r) => {
+    if (r.status === 422) throw new Error("Enter a valid email address.");
+    if (!r.ok) throw new Error(`Couldn't send the code (${r.status}).`);
+    return r.json();
+  });
+}
+
+export function authVerify(email: string, code: string): Promise<{ email: string | null }> {
+  return fetch("/api/auth/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ email, code }),
+  }).then(async (r) => {
+    if (r.status === 400) throw new Error("That code is invalid or expired.");
+    if (!r.ok) throw new Error(`Sign-in failed (${r.status}).`);
+    return r.json();
+  });
+}
+
+export function authLogout(): Promise<{ email: string | null }> {
+  return fetch("/api/auth/logout", { method: "POST", credentials: "include" }).then(
+    j<{ email: string | null }>,
+  );
+}
+
 // ---------- recipe library (persistence + versioning) ----------
 
 export interface RecipeSummary {

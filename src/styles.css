@@ -95,6 +95,26 @@ button { font-family: inherit; cursor: pointer; }
 .icon-btn:hover { color: var(--ink); background: var(--surface-2); }
 .linklike { background: none; border: none; color: var(--accent); font: inherit; font-weight: 560; padding: 0; cursor: pointer; }
 .linklike:hover { text-decoration: underline; }
+.account { display: inline-flex; align-items: center; gap: 8px; }
+.account-email { font-size: 13px; color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* auth modal */
+.modal-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(20, 19, 24, 0.44); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 20px; }
+.modal { position: relative; width: 100%; max-width: 400px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 26px; animation: modal-in 0.16s ease-out; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(6px) scale(0.99); } to { opacity: 1; transform: none; } }
+.modal-close { position: absolute; top: 12px; right: 14px; border: none; background: none; font-size: 22px; line-height: 1; color: var(--faint); cursor: pointer; }
+.modal-close:hover { color: var(--ink); }
+.modal-title { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.modal-sub { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+.field-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.field { width: 100%; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--ground); color: var(--ink); }
+.field:focus { outline: none; border-color: var(--accent); }
+.code-field { letter-spacing: 0.4em; font-family: var(--mono); text-align: center; }
+.field-error { color: var(--remove); font-size: 12.5px; margin-top: 8px; }
+.dev-code { margin-top: 10px; font-size: 12.5px; color: var(--muted); background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 7px 10px; }
+.dev-code b { font-family: var(--mono); color: var(--ink); letter-spacing: 0.1em; }
+.modal-action { width: 100%; margin-top: 16px; padding: 11px; font-size: 14px; }
+.modal-back { display: block; margin: 12px auto 0; font-size: 13px; }
 .muted { color: var(--faint); font-size: 12.5px; }
 
 main { padding: clamp(16px, 3vw, 32px) clamp(16px, 4vw, 40px) 72px; max-width: 1280px; margin: 0 auto; }

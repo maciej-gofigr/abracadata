@@ -15,8 +15,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import AnonSession, Recipe, RecipeVersion
-from app.owner import get_owner
+from app.models import Recipe, RecipeVersion
+from app.owner import Principal, get_principal
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -84,9 +84,22 @@ class VersionListItem(BaseModel):
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def _get_owned_recipe(db: Session, owner: AnonSession, recipe_id: str) -> Recipe:
+def _owns(principal: Principal, recipe: Recipe) -> bool:
+    if principal.user is not None:
+        return recipe.owner_user_id == principal.user.id
+    return recipe.owner_user_id is None and recipe.owner_anon_id == principal.session.id
+
+
+def _owner_filter(principal: Principal):
+    """SQLAlchemy predicate selecting the caller's recipes."""
+    if principal.user is not None:
+        return Recipe.owner_user_id == principal.user.id
+    return (Recipe.owner_user_id.is_(None)) & (Recipe.owner_anon_id == principal.session.id)
+
+
+def _get_owned_recipe(db: Session, principal: Principal, recipe_id: str) -> Recipe:
     recipe = db.get(Recipe, recipe_id)
-    if recipe is None or recipe.owner_anon_id != owner.id:
+    if recipe is None or not _owns(principal, recipe):
         raise HTTPException(status_code=404, detail="Recipe not found")
     return recipe
 
@@ -126,10 +139,14 @@ def _detail(db: Session, recipe: Recipe) -> RecipeDetail:
 @router.post("", response_model=RecipeDetail, status_code=201)
 def create_recipe(
     body: RecipeCreate,
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> RecipeDetail:
-    recipe = Recipe(owner_anon_id=owner.id, name=body.name)
+    recipe = Recipe(
+        name=body.name,
+        owner_user_id=principal.user.id if principal.user else None,
+        owner_anon_id=None if principal.user else principal.session.id,
+    )
     db.add(recipe)
     db.flush()  # populate recipe.id
 
@@ -153,7 +170,7 @@ def create_recipe(
 
 @router.get("", response_model=list[RecipeListItem])
 def list_recipes(
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> list[RecipeListItem]:
     count_col = func.count(RecipeVersion.id)
@@ -165,7 +182,7 @@ def list_recipes(
             Recipe.updated_at,
         )
         .outerjoin(RecipeVersion, RecipeVersion.recipe_id == Recipe.id)
-        .where(Recipe.owner_anon_id == owner.id)
+        .where(_owner_filter(principal))
         .group_by(Recipe.id)
         .order_by(Recipe.updated_at.desc())
     ).all()
@@ -178,10 +195,10 @@ def list_recipes(
 @router.get("/{recipe_id}", response_model=RecipeDetail)
 def get_recipe(
     recipe_id: str,
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> RecipeDetail:
-    recipe = _get_owned_recipe(db, owner, recipe_id)
+    recipe = _get_owned_recipe(db, principal, recipe_id)
     return _detail(db, recipe)
 
 
@@ -189,10 +206,10 @@ def get_recipe(
 def add_version(
     recipe_id: str,
     body: VersionCreate,
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> RecipeDetail:
-    recipe = _get_owned_recipe(db, owner, recipe_id)
+    recipe = _get_owned_recipe(db, principal, recipe_id)
 
     max_no = db.execute(
         select(func.max(RecipeVersion.version_no)).where(
@@ -222,10 +239,10 @@ def add_version(
 @router.get("/{recipe_id}/versions", response_model=list[VersionListItem])
 def list_versions(
     recipe_id: str,
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> list[VersionListItem]:
-    recipe = _get_owned_recipe(db, owner, recipe_id)
+    recipe = _get_owned_recipe(db, principal, recipe_id)
     versions = db.execute(
         select(RecipeVersion)
         .where(RecipeVersion.recipe_id == recipe.id)
@@ -248,10 +265,10 @@ def list_versions(
 def rename_recipe(
     recipe_id: str,
     body: RecipeRename,
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> RecipeDetail:
-    recipe = _get_owned_recipe(db, owner, recipe_id)
+    recipe = _get_owned_recipe(db, principal, recipe_id)
     recipe.name = body.name
     db.commit()
     db.refresh(recipe)
@@ -261,9 +278,9 @@ def rename_recipe(
 @router.delete("/{recipe_id}", status_code=204)
 def delete_recipe(
     recipe_id: str,
-    owner: AnonSession = Depends(get_owner),
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ) -> None:
-    recipe = _get_owned_recipe(db, owner, recipe_id)
+    recipe = _get_owned_recipe(db, principal, recipe_id)
     db.delete(recipe)
     db.commit()

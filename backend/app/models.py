@@ -25,10 +25,36 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class User(Base):
+    """A signed-in account, keyed by email. Passwordless (email code login)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
+class LoginCode(Base):
+    """A short-lived, single-use email verification code (stored hashed)."""
+
+    __tablename__ = "login_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+
 class AnonSession(Base):
     __tablename__ = "anon_sessions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    # When set, this browser is signed in as the given user.
+    user_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(default=_now)
     last_seen: Mapped[datetime] = mapped_column(default=_now)
 
@@ -41,8 +67,13 @@ class Recipe(Base):
     __tablename__ = "recipes"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
-    owner_anon_id: Mapped[str] = mapped_column(
-        ForeignKey("anon_sessions.id"), index=True
+    # A recipe is owned by exactly one of: an anonymous session, or a user.
+    # Signing in migrates a session's recipes to owner_user_id (see auth.verify).
+    owner_anon_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("anon_sessions.id"), nullable=True, index=True
+    )
+    owner_user_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(255))
     current_version_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
