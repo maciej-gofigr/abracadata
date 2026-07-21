@@ -51,6 +51,7 @@ export function App() {
   const [libMsg, setLibMsg] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [aliasDraft, setAliasDraft] = useState<Record<string, string>>({});
+  const [expectedInputs, setExpectedInputs] = useState<{ alias: string; columns: string[] }[]>([]);
 
   useEffect(() => {
     pyWorker.warmUp();
@@ -98,9 +99,19 @@ export function App() {
   async function loadDataFile(file: File, current: InputFile[]): Promise<InputFile | null> {
     setLoadingMsg(`Reading ${file.name}… (first load also fetches the runtime, ~10s)`);
     try {
-      const alias = uniqueAlias(aliasFromFilename(file.name), current);
+      let alias = uniqueAlias(aliasFromFilename(file.name), current);
       const buffer = await file.arrayBuffer();
       const { preview } = await pyWorker.loadInput(alias, file.name, buffer);
+      // Re-running a saved recipe: snap this file into the named slot whose
+      // columns it matches, so it works regardless of this month's filename.
+      if (expectedInputs.length) {
+        const taken = new Set(current.map((i) => i.alias));
+        const match = matchExpectedSlot(preview.columns, expectedInputs, taken);
+        if (match && match !== alias) {
+          await pyWorker.renameInput(alias, match);
+          alias = match;
+        }
+      }
       return { alias, fileName: file.name, preview };
     } catch (err) {
       setFileError(errorMessage(err));
@@ -269,12 +280,14 @@ export function App() {
       setParamValues(values);
       setCurrentRecipeId(d.id);
       setCurrentRecipeName(d.name);
+      setExpectedInputs(Array.isArray(cv.inputs) ? (cv.inputs as { alias: string; columns: string[] }[]) : []);
       await refreshVersions(d.id);
       if (inputs.length) {
         setLibMsg(`Opened “${d.name}” (v${cv.version_no})`);
         void run(cv.script, values, inputs);
       } else {
         setLibMsg(`Opened “${d.name}” — drop this month's files to run it`);
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (err) {
       setLibMsg(`Open failed: ${errorMessage(err)}`);
@@ -296,6 +309,8 @@ export function App() {
     setCurrentRecipeName("");
     setVersions([]);
     setShowCode(false);
+    setExpectedInputs([]);
+    setLibMsg(null);
     void pyWorker.clearInputs();
   }
 
@@ -389,9 +404,21 @@ export function App() {
               summarize, chart. You get a reusable recipe that does the exact same thing to next month's files.
             </p>
 
+            {currentRecipeName && (
+              <div className="reopen-banner">
+                <strong>Ready to re-run “{currentRecipeName}”.</strong>{" "}
+                Drop this month's files below
+                {expectedInputs.length > 0 && (
+                  <> — it expects {expectedInputs.map((e, i) => (
+                    <span key={e.alias}>{i > 0 ? ", " : ""}<code>{e.alias}</code></span>
+                  ))}</>
+                )}.
+              </div>
+            )}
+
             <DropZone
               onFiles={handleFiles}
-              label="Drop one or more CSV / Excel files"
+              label={currentRecipeName ? `Drop this month's files for “${currentRecipeName}”` : "Drop one or more CSV / Excel files"}
               hint="Everything runs in your browser — your data never leaves this machine."
             />
 
@@ -620,14 +647,40 @@ function defaultsOf(ps: RecipeParam[]): ParamValues {
   return v;
 }
 
+const MONTHS =
+  "january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec";
+
 function aliasFromFilename(name: string): string {
   let base = name.replace(/\.[^.]+$/, "");
+  // Strip a trailing date/period suffix (orders_august, orders_2026-06, orders_q3).
   base = base.replace(
-    /[ _-]*(20\d{2}[-_]?\d{2}(?:[-_]?\d{2})?|\d{6,8}|q[1-4]|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/i,
+    new RegExp(`[ _-]*(20\\d{2}[-_]?\\d{2}(?:[-_]?\\d{2})?|\\d{6,8}|q[1-4]|${MONTHS})([ _-]?20\\d{2})?$`, "i"),
     "",
   );
   base = base.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toLowerCase();
   return base || "input";
+}
+
+/** Best expected slot for a file's columns (>=60% of the slot's columns present). */
+function matchExpectedSlot(
+  columns: string[],
+  expected: { alias: string; columns: string[] }[],
+  taken: Set<string>,
+): string | null {
+  const have = new Set(columns.map((c) => c.toLowerCase()));
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const e of expected) {
+    if (taken.has(e.alias) || !e.columns?.length) continue;
+    const want = e.columns.map((c) => c.toLowerCase());
+    const shared = want.filter((c) => have.has(c)).length;
+    const score = shared / want.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = e.alias;
+    }
+  }
+  return bestScore >= 0.6 ? best : null;
 }
 
 function uniqueAlias(base: string, current: InputFile[]): string {

@@ -137,6 +137,8 @@ h1 em { font-style: normal; color: var(--accent); }
 .how-t { font-weight: 600; font-size: 14px; }
 .how-d { color: var(--muted); font-size: 13px; }
 .trust-line { margin-top: 30px; color: var(--faint); font-size: 13px; display: flex; align-items: center; gap: 8px; justify-content: center; }
+.reopen-banner { background: var(--accent-tint); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 12px; padding: 13px 16px; margin-bottom: 16px; font-size: 14px; color: var(--ink); }
+.reopen-banner code { font-family: var(--mono); font-size: 12.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
 
 /* workspace */
 .header-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; gap: 12px; }
