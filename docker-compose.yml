@@ -3,6 +3,11 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    # AWS (Bedrock) credentials + model/region live here — see backend/.env.example.
+    # Optional so the stack still starts without it (generation just won't work).
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://datarecipes:datarecipes@postgres:5432/datarecipes
     depends_on:
@@ -35,7 +40,7 @@ services:
       start_period: 5s
 
   frontend:
-    build: .
+    build: ./frontend
     ports:
       - "8080:8080"
     depends_on:

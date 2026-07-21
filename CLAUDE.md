@@ -2,89 +2,111 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Layout
+
+A monorepo with two sibling packages plus a compose file that ties them together:
+
+- `frontend/` — Vite + React + TypeScript SPA (the Pyodide/pandas runtime lives here).
+- `backend/` — FastAPI service (recipe generation proxy + persistence). **Never executes user code.**
+- `docker-compose.yml` — full stack: frontend `:8080` (nginx) + backend `:8000` + postgres.
+
+Each package has a `Makefile` with a `dev-local` target for running outside Docker.
+
 ## Commands
 
-Frontend (Vite SPA at repo root):
+Frontend (run from `frontend/`):
 
 ```sh
+cd frontend
 npm install
-npm run dev      # Vite dev server at http://localhost:5173
-npm run build    # tsc type-check (noEmit) THEN vite build to dist/  — the type gate
+make dev-local   # == npm run dev — Vite dev server at http://localhost:5173 (proxies /api -> :8000)
+npm run build    # tsc type-check (noEmit) THEN vite build to dist/ — the type gate
 npm run preview  # serve the production build
 npm test         # Vitest (happy-dom) — unit + component tests in src/**/*.test.{ts,tsx}
 ```
 
-Backend (FastAPI in `backend/`) and full stack:
+Backend (run from `backend/`):
 
 ```sh
-# backend tests (venv; get-pip because the box lacks ensurepip/system pip)
-python3 -m venv --without-pip backend/.venv && curl -fsSL https://bootstrap.pypa.io/get-pip.py | backend/.venv/bin/python
-backend/.venv/bin/pip install -r backend/requirements-dev.txt
-cd backend && ./.venv/bin/python -m pytest      # tests in backend/tests/
+# one-time venv (get-pip because the box lacks ensurepip/system pip)
+python3 -m venv --without-pip .venv && curl -fsSL https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
+.venv/bin/pip install -r requirements-dev.txt
 
-docker compose up                               # full stack: frontend :8080 (nginx) + backend :8000
+cd backend
+./.venv/bin/python -m pytest        # tests in backend/tests/
+make dev-local                      # uvicorn --reload on :8000 (sqlite, live Bedrock via host AWS SSO, dev auth codes)
 ```
 
+Full stack: `docker compose up --build` (app at http://localhost:8080). The backend container has no
+AWS creds and no mailer, so set `MOCK_GENERATE=1` (canned recipe) and `AUTH_DEV_ECHO=1` (echo login
+codes) via a `docker-compose.override.yml` for a self-contained local run — see the run notes below.
+
 `npm run build` is the type gate — `tsconfig.json` enables `strict`, `noUnusedLocals`, and
-`noUnusedParameters`, so unused imports/vars are hard errors (test files are excluded from
-this build via `tsconfig.json` `exclude`). No linter/formatter is configured. **Node 18** on
-this box: some newer deps assume Node 20 — that's why tests use happy-dom (not jsdom) and why
-a clean `node_modules` matters (see history if `vite`/`rollup` misbehave).
+`noUnusedParameters`, so unused imports/vars are hard errors (test files are excluded via `tsconfig.json`
+`exclude`). No linter/formatter is configured. **Node 18** on this box: some newer deps assume Node 20 —
+that's why tests use happy-dom (not jsdom) and why a clean `frontend/node_modules` matters.
 
 ## Big picture
 
-A **fully client-side, serverless** web app: static page, no backend, no accounts, no
-persistence beyond `localStorage`. It turns plain-language descriptions into deterministic
-pandas scripts ("recipes") that run in-browser. Two external services are hit directly from
-the browser: Pyodide/pandas wheels from a CDN, and the Anthropic API with the user's own key.
+Plain-language descriptions become deterministic pandas scripts ("recipes") that run **in the browser**.
+The backend generates recipe *text* (via Claude on Bedrock) and stores it; it never runs user code.
+Accounts are optional (anonymous-first). The data flow spans both packages:
 
-The data flow that spans multiple files:
-
-1. **File in** → `App.handleFiles` sends the raw bytes to `pyWorker.loadFile`, which runs
-   pandas `read_csv`/`read_excel` in the worker and returns a `TablePreview`.
-2. **Prompt** → `App.sendPrompt` calls `generateScript` (`src/lib/llm.ts`), which sends the
-   chat history + dataset schema to Anthropic and expects a reply containing exactly one
-   Python code block defining `transform(df)`. `extractScript` pulls the last code block out.
-3. **Run** → `App.runScript` sends the script to `pyWorker.runScript`, which `exec`s it,
-   calls `transform(input.copy())`, and returns an output `TablePreview` + `DiffSummary`.
-4. **Save** → `buildRecipe` (`src/lib/recipe.ts`) wraps the script in a metadata header +
-   CLI entry point and downloads it as a `.py` file. Dropping such a `.py` back in is parsed
-   by `parseRecipe` and re-applied to a new file.
+1. **File in** → `App.handleFiles` → `pyWorker.loadInput`, which runs pandas `read_csv`/`read_excel` in
+   the web worker and returns a `TablePreview`. Files never leave the browser.
+2. **Prompt** → `App.generate` → `generateRecipe` (`frontend/src/lib/api.ts`) streams the chat history +
+   dataset schema to `POST /generate`. The backend (`backend/app/generate.py`) calls Claude on Bedrock and
+   streams back a plain-language explanation, exactly one `python` code block defining
+   `transform(inputs, params)`, and one `json` block describing adjustable **knobs**. `extract_script` /
+   `extract_params` pull those out of the last blocks.
+3. **Run** → `App.runScript` → `pyWorker.runScript` `exec`s the script, calls `transform(inputs, params)`,
+   and returns `{tables, plots}`. Plot figures are plain Plotly dicts built in Python and rendered by
+   Plotly.js on the main thread (`frontend/src/lib/plot.ts`) — Plotly is **not** installed in Pyodide.
+4. **Save** → `POST /recipes` (`backend/app/recipes.py`) persists + versions the recipe (owner-scoped).
+   `buildRecipe` (`frontend/src/lib/recipe.ts`) can also download a standalone `.py`; `parseRecipe`
+   re-applies a dropped `.py`.
 
 ### Two execution boundaries — respect them
 
-- **Python runs only in the web worker** (`src/lib/pyodideWorker.ts`), never on the UI
-  thread. The worker owns the single Pyodide instance. Its Python `BOOTSTRAP` string holds
-  all Python entry points (`load_file`, `run_script`, `export_output`); each returns a JSON
-  string with an `ok` flag so Python tracebacks surface as readable errors rather than opaque
-  JS throws. DataFrame state (`input`/`output`) lives in the worker's `_state` dict — the UI
-  only ever sees serialized previews, never the DataFrame itself.
-- **`src/lib/pyodide.ts`** is the typed RPC bridge (`pyWorker` singleton): correlates
-  request/response by incrementing `id`, wraps each call in a promise. Add a new Python
-  capability by extending `WorkerRequest`, adding a `BOOTSTRAP` function + dispatch branch in
-  the worker, and a method on `PyWorker`.
+- **Python runs only in the web worker** (`frontend/src/lib/pyodideWorker.ts`), never on the UI thread.
+  The worker owns the single Pyodide instance; its `BOOTSTRAP` string holds all Python entry points
+  (`load_input`, `run_script`, `export_table`, `rename_input`), each returning a JSON string with an `ok`
+  flag so tracebacks surface as readable errors. Input/output DataFrames live in the worker's `_state`
+  dict — the UI only ever sees serialized previews. `frontend/src/lib/pyodide.ts` is the typed RPC bridge
+  (`pyWorker` singleton); add a capability by extending `WorkerRequest` + a `BOOTSTRAP` fn + a dispatch
+  branch + a `PyWorker` method.
+- **The backend never executes user code** — it only generates recipe text and stores it. This is a
+  deliberate security boundary; don't add a code-execution path server-side.
 
 ### Conventions worth knowing
 
-- **Product name is centralized** in `src/branding.ts` (`APP_NAME`, `APP_TAGLINE`). Nothing
-  else hardcodes the name — never introduce a second copy. "Data Recipes" is a working title.
-- **LLM contract** lives in `SYSTEM_PROMPT` in `src/lib/llm.ts`: script must define
-  `transform(df: pd.DataFrame) -> pd.DataFrame`, use only pandas/numpy/stdlib, no file or
-  network I/O, and return the *full* updated script on revisions (not a diff). Dataset context
-  (schema + optionally first 20 rows, gated by `settings.shareSampleRows`) is attached to the
-  first user turn only; the chat resets whenever a new file loads so the context stays valid.
-- **`DEFAULT_MODEL`** (`claude-opus-4-8`) is set in `src/lib/llm.ts`. The SDK is called with
-  `dangerouslyAllowBrowser: true` because the key is the user's own, kept in `localStorage`.
-- **Recipe file format** (`src/lib/recipe.ts`): a `# === recipe metadata ===` JSON-in-comments
-  header, the `transform()` body, then an `if __name__ == "__main__"` argparse CLI so the same
-  file also runs standalone (`python recipe.py input.csv -o output.csv`). Keep build/parse in
-  sync — the metadata delimiters and main guard are the parse anchors.
-- **State is all in `App.tsx`** via `useState` — there is no store/router/context. `Settings`
-  is the only thing persisted (`localStorage` key `settings.v1`).
+- **v2 recipe contract:** `transform(inputs: dict[str, DataFrame], params: dict) -> {"tables": {...},
+  "plots": {...}}` — 1+ tables, 0+ Plotly figure dicts. `plot_bar/plot_line/plot_scatter/plot_pie` helpers
+  are injected into the recipe namespace (dependency-free — they return Plotly dicts; don't import plotly).
+- **Knobs** are inferred by the model: it reads adjustable scalars via `params.get("key", DEFAULT)` and
+  emits a `json` spec (name/label/type/default/…) that the UI renders as controls. Last-used values are
+  persisted alongside the recipe and restored on reopen.
+- **LLM contract** lives in `SYSTEM_PROMPT` in `backend/app/generate.py`. Generation uses **boto3
+  `bedrock-runtime` Converse** (streaming) — *not* the anthropic SDK, whose Bedrock clients fail in this
+  account. `BEDROCK_MODEL` defaults to `us.anthropic.claude-opus-4-6-v1`; `MOCK_GENERATE=1` returns a
+  canned recipe for offline/dev.
+- **Auth is passwordless + optional** (`backend/app/auth.py`): email → 6-digit code. The `anon_id` cookie
+  *is* the session (`backend/app/owner.py`); signing in links it to a `User` and **claims** the session's
+  anonymous recipes. A recipe is owned by *either* an anon session or a user (`owner.py` resolves a
+  `Principal`; `recipes.py` scopes every route through it). `_send_code` just logs today; `AUTH_DEV_ECHO=1`
+  returns the code in the response for local use — wire a real mailer (e.g. SES) for prod.
+- **Persistence:** SQLAlchemy 2.0; sqlite `backend/data/app.db` by default, Postgres via compose
+  (`DATABASE_URL`). Recipe versions are immutable snapshots (script + params + param_values + inputs).
+- **Product name is centralized** in `frontend/src/branding.ts` (`APP_NAME`, `APP_TAGLINE`) — never add a
+  second copy. **UI state is all in `frontend/src/App.tsx`** via `useState`; no store/router/context.
+- **Recipe file format** (`frontend/src/lib/recipe.ts`): a `# === recipe metadata ===` JSON-in-comments
+  header, the `transform()` body, then an `if __name__ == "__main__"` argparse CLI so the file also runs
+  standalone (`python recipe.py orders.csv -o out.csv`). Metadata delimiters + main guard are the parse
+  anchors — keep build/parse in sync.
 
 ### TypeScript notes
 
-- The worker deliberately avoids the WebWorker lib types (they conflict with DOM types in a
-  single `tsconfig`); it casts `self` to a minimal typed shape instead. Pyodide is typed `any`.
-- Vite is configured for ES-module workers (`worker.format: "es"`); the Pyodide URL import
-  uses `/* @vite-ignore */` so Vite doesn't try to bundle the CDN module.
+- The worker deliberately avoids the WebWorker lib types (they conflict with DOM types in a single
+  `tsconfig`); it casts `self` to a minimal typed shape instead. Pyodide is typed `any`.
+- Vite is configured for ES-module workers (`worker.format: "es"`); the Pyodide URL import uses
+  `/* @vite-ignore */` so Vite doesn't try to bundle the CDN module.

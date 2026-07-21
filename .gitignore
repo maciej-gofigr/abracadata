@@ -1,7 +1,13 @@
 node_modules/
 dist/
+.vite/
 *.local
 .DS_Store
+
+# Secrets / local env (never commit); .env.example is the tracked template
+.env
+.env.*
+!.env.example
 
 # Claude Code local (per-machine) settings
 .claude/settings.local.json
