@@ -56,6 +56,7 @@ export function App() {
   const [libMsg, setLibMsg] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [aliasDraft, setAliasDraft] = useState<Record<string, string>>({});
+  const [activeInputIdx, setActiveInputIdx] = useState(0);
   const [expectedInputs, setExpectedInputs] = useState<{ alias: string; columns: string[] }[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -96,15 +97,20 @@ export function App() {
     setFileError(null);
     let current = inputs;
     let loadedRecipe = false;
+    let addedData = false;
     for (const file of files) {
       if (file.name.toLowerCase().endsWith(".py")) {
         loadedRecipe = (await loadRecipeFile(file)) || loadedRecipe;
       } else {
         const added = await loadDataFile(file, current);
-        if (added) current = [...current.filter((i) => i.alias !== added.alias), added];
+        if (added) {
+          current = [...current.filter((i) => i.alias !== added.alias), added];
+          addedData = true;
+        }
       }
     }
     setInputs(current);
+    if (addedData) setActiveInputIdx(current.length - 1); // focus the file just added
     if (script && current.length && !loadedRecipe) void run(script, paramValues, current);
   }
 
@@ -164,6 +170,7 @@ export function App() {
         { alias: "customers", fileName: "customers.csv", preview: cus.preview },
       ];
       setInputs(next);
+      setActiveInputIdx(0);
       setScript(SAMPLE_SCRIPT);
       setParams(SAMPLE_PARAMS);
       const values = defaultsOf(SAMPLE_PARAMS);
@@ -382,6 +389,7 @@ export function App() {
     setVersions([]);
     setShowCode(false);
     setExpectedInputs([]);
+    setActiveInputIdx(0);
     setLibMsg(null);
     void pyWorker.clearInputs();
   }
@@ -407,6 +415,7 @@ export function App() {
   }
 
   const hasInputs = inputs.length > 0;
+  const activeInput = inputs[Math.min(activeInputIdx, inputs.length - 1)] ?? null;
   const explanation = explanationOnly(assistantText);
 
   const library_panel =
@@ -581,32 +590,41 @@ export function App() {
             {fileError && <div className="error">{fileError}</div>}
 
             <section className="section">
-              <div className="header-row" style={{ marginBottom: 12 }}>
+              <div className="header-row" style={{ marginBottom: 10 }}>
                 <h2 className="page-title" style={{ fontSize: 15 }}>
                   Your files <span className="muted">— rename a slot to reuse this recipe on next month's files</span>
                 </h2>
               </div>
-              <div className="inputs-grid">
-                {inputs.map((inp) => (
-                  <div className="card" key={inp.fileName + inp.alias}>
-                    <div className="card-header">
-                      <input
-                        className="alias-input"
-                        value={aliasDraft[inp.fileName] ?? inp.alias}
-                        aria-label="Slot name"
-                        onChange={(e) => setAliasDraft({ ...aliasDraft, [inp.fileName]: e.target.value })}
-                        onBlur={() => commitAlias(inp)}
-                        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                      />
-                      <span className="from-file">{inp.fileName}</span>
-                    </div>
-                    <DataTable preview={inp.preview} />
-                  </div>
+              <div className="input-tabs" role="tablist" aria-label="Input files">
+                {inputs.map((inp, i) => (
+                  <button
+                    key={inp.fileName}
+                    role="tab"
+                    aria-selected={i === activeInputIdx}
+                    className={`input-tab ${i === activeInputIdx ? "active" : ""}`}
+                    onClick={() => setActiveInputIdx(i)}
+                  >
+                    {aliasDraft[inp.fileName] ?? inp.alias}
+                  </button>
                 ))}
+                <DropZone onFiles={handleFiles} compact label="+ Add file" />
               </div>
-              <div style={{ marginTop: 12 }}>
-                <DropZone onFiles={handleFiles} compact label="+ Add another file" />
-              </div>
+              {activeInput && (
+                <div className="card" role="tabpanel" key={activeInput.fileName}>
+                  <div className="card-header">
+                    <input
+                      className="alias-input"
+                      value={aliasDraft[activeInput.fileName] ?? activeInput.alias}
+                      aria-label="Slot name"
+                      onChange={(e) => setAliasDraft({ ...aliasDraft, [activeInput.fileName]: e.target.value })}
+                      onBlur={() => commitAlias(activeInput)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                    />
+                    <span className="from-file">{activeInput.fileName}</span>
+                  </div>
+                  <DataTable preview={activeInput.preview} />
+                </div>
+              )}
             </section>
 
             <section className="card section describe">

@@ -184,7 +184,21 @@ h1 em { font-style: normal; color: var(--accent); }
 .alias-input:focus { outline: none; border-color: var(--accent); background: var(--ground); }
 .from-file { color: var(--faint); font-weight: 400; font-size: 12.5px; font-family: var(--mono); margin-left: auto; }
 
-.inputs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-bottom: 18px; align-items: start; }
+/* Input files as tabs — one per file, each panel full-width (no cramped columns). */
+.input-tabs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.input-tab {
+  display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font: inherit; font-size: 13px; font-weight: 550;
+  padding: 7px 15px; border-radius: 999px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.input-tab:hover { color: var(--ink); border-color: var(--line-strong); }
+.input-tab.active { background: var(--accent-tint); border-color: var(--accent); color: var(--ink); font-weight: 600; }
+.input-tabs .dropzone-compact {
+  width: auto; border-radius: 999px; border-style: dashed; padding: 7px 15px;
+  border-color: var(--line-strong);
+}
+.input-tabs .dropzone-compact strong { color: var(--accent); font-weight: 550; }
 
 /* tables */
 .table-wrap { overflow: auto; max-height: 440px; }
