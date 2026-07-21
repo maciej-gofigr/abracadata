@@ -153,6 +153,24 @@ h1 em { font-style: normal; color: var(--accent); }
 }
 .sample-btn:hover { border-color: var(--accent); background: var(--accent-tint); }
 .sample-btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+/* template gallery */
+.templates-section { margin-top: 46px; }
+.templates-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.templates-head h2 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.template-card {
+  display: flex; gap: 13px; align-items: flex-start; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 15px;
+  font: inherit; color: var(--ink); transition: border-color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+.template-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.template-card:active { transform: translateY(1px); }
+.template-icon { font-size: 24px; line-height: 1; flex: none; }
+.template-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.template-name { font-weight: 620; font-size: 15px; }
+.template-desc { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.template-cat { margin-top: 4px; align-self: flex-start; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); background: var(--accent-tint); border-radius: 5px; padding: 2px 7px; }
+
 .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 40px; }
 @media (max-width: 640px) { .how { grid-template-columns: 1fr; } }
 .how-step { display: flex; gap: 12px; align-items: flex-start; }

@@ -34,7 +34,7 @@ export function ApplyView({
   onExit,
 }: {
   recipe: ApplyRecipe;
-  mode: "owner" | "shared";
+  mode: "owner" | "shared" | "template";
   onEdit?: (inputs: InputFile[], paramValues: ParamValues) => void;
   onSaveCopy?: (paramValues: ParamValues, inputs: InputFile[]) => Promise<string | null>;
   onExit: () => void;
@@ -158,7 +158,7 @@ export function ApplyView({
       <div className="apply-head">
         <div>
           <div className="apply-eyebrow">
-            {mode === "shared" ? "Shared recipe" : "Run recipe"}
+            {mode === "shared" ? "Shared recipe" : mode === "template" ? "Template" : "Run recipe"}
             <span className="apply-privacy">· your files stay in your browser</span>
           </div>
           <h1 className="apply-title">{recipe.name}</h1>
@@ -248,9 +248,9 @@ export function ApplyView({
       )}
 
       <div className="apply-actions">
-        {mode === "shared" && onSaveCopy && (
+        {(mode === "shared" || mode === "template") && onSaveCopy && (
           <button className="btn primary" disabled={saving} onClick={saveCopy}>
-            {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : "Save a copy to my library"}
+            {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : mode === "template" ? "Save to my library" : "Save a copy to my library"}
           </button>
         )}
         {mode === "owner" && onEdit && (

@@ -35,6 +35,7 @@ import {
 import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
 import { ParamControl, defaultsOf, type ParamValues } from "./components/ParamControl";
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
+import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
 import type { InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
 
 export function App() {
@@ -79,7 +80,7 @@ export function App() {
   const [user, setUser] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
 
-  const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared"; recipeId?: string } | null>(null);
+  const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared" | "template"; recipeId?: string } | null>(null);
   const [sharePanelId, setSharePanelId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -89,11 +90,17 @@ export function App() {
     void refreshLibrary();
     void authMe().then((r) => setUser(r.email)).catch(() => {});
     // Shared link: /s/{token} -> load the recipe into the apply view.
-    const m = window.location.pathname.match(/^\/s\/([^/]+)/);
-    if (m) {
-      void getSharedRecipe(decodeURIComponent(m[1]))
+    const shared = window.location.pathname.match(/^\/s\/([^/]+)/);
+    if (shared) {
+      void getSharedRecipe(decodeURIComponent(shared[1]))
         .then((s) => setApplyState({ recipe: applyRecipeFromShared(s), mode: "shared" }))
         .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
+    }
+    // Template link: /t/{slug} -> open that template in the apply view.
+    const tpl = window.location.pathname.match(/^\/t\/([^/]+)/);
+    if (tpl) {
+      const t = templateBySlug(decodeURIComponent(tpl[1]));
+      if (t) setApplyState({ recipe: templateToApply(t), mode: "template" });
     }
   }, []);
 
@@ -396,21 +403,29 @@ export function App() {
     }
   }
 
+  function openTemplate(t: Template) {
+    void pyWorker.clearInputs();
+    setApplyState({ recipe: templateToApply(t), mode: "template" });
+    window.history.pushState({}, "", `/t/${t.slug}`);
+    window.scrollTo({ top: 0 });
+  }
+
   function exitApply() {
+    const onDeepLink = /^\/[st]\//.test(window.location.pathname);
     setApplyState(null);
     void pyWorker.clearInputs();
-    if (window.location.pathname.startsWith("/s/")) {
+    if (onDeepLink) {
       window.history.pushState({}, "", "/");
       reset();
     }
   }
 
-  // "Save a copy" from a shared recipe -> a new recipe in the caller's library.
+  // "Save a copy" from a shared recipe / template -> a new recipe in the library.
   async function saveSharedCopy(paramValues: ParamValues, ins: InputFile[]): Promise<string | null> {
     if (!applyState) return null;
     const r = applyState.recipe;
     const d = await createRecipe({
-      name: `${r.name} (copy)`,
+      name: applyState.mode === "template" ? r.name : `${r.name} (copy)`,
       script: r.script,
       params: r.params,
       param_values: paramValues,
@@ -738,7 +753,7 @@ export function App() {
             recipe={applyState.recipe}
             mode={applyState.mode}
             onEdit={applyState.mode === "owner" ? editFromApply : undefined}
-            onSaveCopy={applyState.mode === "shared" ? saveSharedCopy : undefined}
+            onSaveCopy={applyState.mode !== "owner" ? saveSharedCopy : undefined}
             onExit={exitApply}
           />
         )}
@@ -785,6 +800,25 @@ export function App() {
 
             {loadingMsg && <div className="status" style={{ marginTop: 24 }}>{loadingMsg}</div>}
             {fileError && <div className="error" style={{ marginTop: 20 }}>{fileError}</div>}
+
+            <div className="templates-section">
+              <div className="templates-head">
+                <h2>Start from a template</h2>
+                <span className="muted">ready-made recipes for common chores — click one, drop your file, done</span>
+              </div>
+              <div className="template-grid">
+                {TEMPLATES.map((t) => (
+                  <button className="template-card" key={t.slug} onClick={() => openTemplate(t)}>
+                    <span className="template-icon" aria-hidden="true">{t.icon}</span>
+                    <span className="template-body">
+                      <span className="template-name">{t.name}</span>
+                      <span className="template-desc">{t.description}</span>
+                      <span className="template-cat">{t.category}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {library_panel && <div style={{ marginTop: 40 }}>{library_panel}</div>}
           </section>
@@ -1114,6 +1148,17 @@ function applyRecipeFromDetail(d: RecipeDetail): ApplyRecipe | null {
     params: (Array.isArray(cv.params) ? cv.params : []) as RecipeParam[],
     paramValues: (cv.param_values && typeof cv.param_values === "object" ? cv.param_values : {}) as ParamValues,
     inputs: (Array.isArray(cv.inputs) ? cv.inputs : []) as { alias: string; columns: string[] }[],
+  };
+}
+
+function templateToApply(t: Template): ApplyRecipe {
+  return {
+    name: t.name,
+    description: t.description,
+    script: t.script,
+    params: t.params,
+    paramValues: defaultsOf(t.params),
+    inputs: t.inputs,
   };
 }
 
