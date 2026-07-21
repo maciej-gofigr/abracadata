@@ -1,6 +1,6 @@
-# Data Recipes
+# Prestidata
 
-> Working title — the real product name plugs in via [`frontend/src/branding.ts`](frontend/src/branding.ts).
+> **Describe your spreadsheet work once. Rerun it forever — like magic.** (The product name lives in [`frontend/src/branding.ts`](frontend/src/branding.ts).)
 
 Turn plain-language descriptions into **reusable data-transformation scripts**. Drop one or more CSV/Excel files, describe what you need — join, clean, summarize, chart — and the AI writes a deterministic pandas script that runs instantly in your browser. Save it as a **recipe** and re-run it on next month's files: same steps, same result, no re-prompting.
 

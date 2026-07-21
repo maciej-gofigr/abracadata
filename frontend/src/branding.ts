@@ -1,5 +1,4 @@
-// Single source of truth for the product name. Swap these values when the
-// real name is chosen — nothing else in the codebase should hardcode it.
-export const APP_NAME = "Data Recipes";
+// Single source of truth for the product name. Nothing else hardcodes it.
+export const APP_NAME = "Prestidata";
 export const APP_TAGLINE =
-  "Join, clean, summarize, and chart your spreadsheets — once. Reuse the recipe forever.";
+  "Describe your spreadsheet work once. Rerun it forever — like magic.";
