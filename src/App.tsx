@@ -188,16 +188,18 @@ export function App() {
         acc += delta;
         setAssistantText(acc);
       },
-      (generated) => {
+      (generated, genParams) => {
         setMessages([...history, { role: "assistant", text: acc }]);
         setGenerating(false);
         if (generated) {
           setScript(generated);
-          // AI recipes don't declare tunable params yet — clear the panel so it
-          // never shows stale controls that don't match the current recipe.
-          setParams([]);
-          setParamValues({});
-          void run(generated, {}, inputs);
+          // The generator infers which scalars are worth exposing as knobs and
+          // returns them as a spec; render exactly those (replacing any stale set).
+          const ps = (Array.isArray(genParams) ? genParams : []) as RecipeParam[];
+          setParams(ps);
+          const values = defaultsOf(ps);
+          setParamValues(values);
+          void run(generated, values, inputs);
         } else {
           setGenError("The model didn't return a recipe — try rephrasing.");
         }

@@ -30,7 +30,7 @@ _bedrock = boto3.client("bedrock-runtime", region_name=AWS_REGION)
 
 SYSTEM_PROMPT = """You are the code generator inside a data-transformation tool for non-technical office workers. The user has loaded one or more tabular files (each a pandas DataFrame) and describes what they want in plain language.
 
-Respond with a short plain-language explanation of what the recipe does (1-3 sentences, no jargon), then exactly one Python code block containing the complete script.
+Respond with a short plain-language explanation of what the recipe does (1-3 sentences, no jargon), then exactly one Python code block containing the complete script, then one JSON code block describing the adjustable settings (details below).
 
 Requirements for the script:
 - Define: def transform(inputs: dict, params: dict) -> dict
@@ -45,7 +45,15 @@ Requirements for the script:
 - Use only pandas, numpy, and the Python standard library. No file or network I/O — operate only on the DataFrames in `inputs`.
 - Be robust to messy real-world data (strip whitespace when matching strings, coerce types when needed), but never silently drop data unless the user asked for a filter.
 - When revising a previous script, return the full updated script, not a diff.
-- Put `import pandas as pd` at the top."""
+- Put `import pandas as pd` at the top.
+
+Adjustable settings (knobs):
+- Identify simple scalar values a non-technical user might reasonably want to change later WITHOUT re-describing the recipe: thresholds, a group-by column, a top-N count, a date cutoff, an on/off toggle. Prefer 0-4 of the most useful; do not invent knobs that aren't central to the request.
+- In the script, read each knob from `params` using `params.get("key", DEFAULT)` where DEFAULT is the value you'd otherwise hardcode, and reference that same key consistently. Using `.get` with a default means the recipe still runs if a value is absent.
+- After the Python code block, output ONE fenced code block tagged `json` containing a JSON array describing those knobs, so the tool can render them as controls. Each entry is an object:
+    {"name": the exact params key, "label": short human label, "type": "number"|"currency"|"date"|"enum"|"bool"|"text", "default": the default value}
+  Optional per entry: "options" (array of strings, REQUIRED for "enum"), "min"/"max"/"step" (for number/currency), "help" (a short hint, no jargon).
+  Use "currency" for money amounts and "enum" (with "options") when the value must be one of a fixed set such as a column name to group by. Every knob's "name" MUST be a key the script reads from params. If there are no sensible knobs, output an empty array: []."""
 
 
 class InputSpec(BaseModel):
@@ -90,9 +98,69 @@ def _build_messages(req: GenerateRequest) -> list[dict[str, Any]]:
     return out
 
 
+def _code_blocks(text: str) -> list[tuple[str, str]]:
+    """All fenced blocks as (lang, body); lang is "" for untagged fences."""
+    return [
+        (lang.lower(), body)
+        for lang, body in re.findall(r"```([A-Za-z0-9_+-]*)[ \t]*\n(.*?)```", text, re.DOTALL)
+    ]
+
+
 def extract_script(text: str) -> str | None:
-    blocks = re.findall(r"```(?:python)?\s*\n(.*?)```", text, re.DOTALL)
-    return blocks[-1].strip() if blocks else None
+    blocks = _code_blocks(text)
+    # Prefer the last python/untagged block that actually defines transform,
+    # so a trailing ```json knob block is never mistaken for the script.
+    for lang, body in reversed(blocks):
+        if lang in ("", "python", "py") and "def transform" in body:
+            return body.strip()
+    for lang, body in reversed(blocks):
+        if lang in ("", "python", "py"):
+            return body.strip()
+    return None
+
+
+_ALLOWED_PARAM_TYPES = {"number", "currency", "date", "enum", "bool", "text"}
+
+
+def _sanitize_params(data: Any) -> list[dict[str, Any]]:
+    """Keep only well-formed knob specs matching the frontend RecipeParam shape."""
+    if not isinstance(data, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict) or "default" not in item:
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        ptype = item.get("type")
+        if ptype not in _ALLOWED_PARAM_TYPES:
+            ptype = "text"
+        if ptype == "enum" and not (isinstance(item.get("options"), list) and item["options"]):
+            continue  # an enum with no options can't render a control
+        knob: dict[str, Any] = {
+            "name": name,
+            "label": item.get("label") if isinstance(item.get("label"), str) and item.get("label") else name,
+            "type": ptype,
+            "default": item["default"],
+        }
+        for key in ("options", "min", "max", "step", "help"):
+            if item.get(key) is not None:
+                knob[key] = item[key]
+        out.append(knob)
+        if len(out) >= 8:  # cap the number of controls
+            break
+    return out
+
+
+def extract_params(text: str) -> list[dict[str, Any]]:
+    for lang, body in reversed(_code_blocks(text)):
+        if lang == "json":
+            try:
+                return _sanitize_params(json.loads(body.strip()))
+            except Exception:
+                continue
+    return []
 
 
 def _stream_deltas(system: str, messages: list[dict[str, Any]]) -> Iterator[str]:
@@ -118,11 +186,17 @@ def transform(inputs, params):
     customers = inputs["customers"]
     df = orders.merge(customers, on="Customer ID", how="left")
     df["Amount"] = df["Amount"].astype(float)
+    df = df[df["Amount"] >= params.get("min_amount", 0)]
     summary = (df.groupby("Segment", as_index=False)
                  .agg(Orders=("Order ID", "count"), **{"Total Revenue": ("Amount", "sum")})
                  .sort_values("Total Revenue", ascending=False))
     chart = plot_pie(summary["Segment"], summary["Total Revenue"], title="Revenue share by segment")
     return {"tables": {"By segment": summary}, "plots": {"Revenue by segment": chart}}'''
+
+_MOCK_PARAMS = (
+    '[{"name": "min_amount", "label": "Minimum order amount", "type": "currency", '
+    '"default": 0, "min": 0, "step": 50, "help": "Orders below this are dropped"}]'
+)
 
 
 @router.post("/generate")
@@ -130,9 +204,9 @@ def generate(req: GenerateRequest) -> StreamingResponse:
     if os.environ.get("MOCK_GENERATE"):
         def mock() -> Iterator[str]:
             yield f"data: {json.dumps({'text': 'Here is a recipe that joins your orders to customers and shows revenue share by segment as a pie chart.'})}\n\n"
-            block = f"```python\n{_MOCK_RECIPE}\n```"
+            block = f"```python\n{_MOCK_RECIPE}\n```\n\n```json\n{_MOCK_PARAMS}\n```"
             yield f"data: {json.dumps({'text': block})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'script': extract_script(block)})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'script': extract_script(block), 'params': extract_params(block)})}\n\n"
 
         return StreamingResponse(mock(), media_type="text/event-stream")
 
@@ -156,6 +230,6 @@ def generate(req: GenerateRequest) -> StreamingResponse:
             yield f"data: {json.dumps({'error': f'{type(exc).__name__}: {exc}'})}\n\n"
             return
         full = "".join(acc)
-        yield f"data: {json.dumps({'done': True, 'script': extract_script(full)})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'script': extract_script(full), 'params': extract_params(full)})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")

@@ -10,7 +10,7 @@ export interface GenerateBody {
 export async function generateRecipe(
   body: GenerateBody,
   onDelta: (text: string) => void,
-  onDone: (script: string | null) => void,
+  onDone: (script: string | null, params: unknown) => void,
   onError: (message: string) => void,
 ): Promise<void> {
   let resp: Response;
@@ -43,14 +43,14 @@ export async function generateRecipe(
       buf = buf.slice(idx + 2);
       const line = raw.split("\n").find((l) => l.startsWith("data:"));
       if (!line) continue;
-      let payload: { text?: string; error?: string; done?: boolean; script?: string | null };
+      let payload: { text?: string; error?: string; done?: boolean; script?: string | null; params?: unknown };
       try {
         payload = JSON.parse(line.slice(5).trim());
       } catch {
         continue;
       }
       if (payload.error) onError(payload.error);
-      else if (payload.done) onDone(payload.script ?? null);
+      else if (payload.done) onDone(payload.script ?? null, payload.params ?? []);
       else if (payload.text) onDelta(payload.text);
     }
   }
