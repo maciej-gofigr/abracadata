@@ -233,6 +233,8 @@ tbody tr:last-child td { border-bottom: none; }
 .status { color: var(--muted); font-size: 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
 .error, .run-error { background: var(--error-bg); border: 1px solid var(--error-border); border-radius: 10px; padding: 11px 14px; font-size: 13px; margin-bottom: 16px; }
 .run-error-title { font-weight: 600; margin-bottom: 4px; }
+.run-error summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.run-error details[open] summary { margin-bottom: 6px; }
 .run-error pre { font-family: var(--mono); font-size: 12px; overflow-x: auto; margin: 0; white-space: pre-wrap; }
 
 @media (prefers-reduced-motion: reduce) {

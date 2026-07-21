@@ -532,8 +532,12 @@ export function App() {
             {running && <div className="status">Running…</div>}
             {runError && (
               <div className="run-error">
-                <div className="run-error-title">That recipe didn't run:</div>
-                <pre>{runError}</pre>
+                <div className="run-error-title">This recipe couldn't run on your files.</div>
+                <p style={{ margin: "0 0 8px" }}>{friendlyRunError(runError)}</p>
+                <details>
+                  <summary>Technical details</summary>
+                  <pre>{runError}</pre>
+                </details>
               </div>
             )}
 
@@ -703,6 +707,23 @@ function relTime(iso: string): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Translate a Python traceback's last line into something a non-technical
+ * user can act on. Falls back to the raw last line if we don't recognise it. */
+function friendlyRunError(trace: string): string {
+  const last = trace.trim().split("\n").filter(Boolean).pop() ?? trace;
+  let m: RegExpMatchArray | null;
+  if ((m = last.match(/KeyError:\s*['"]?([^'"]+)/))) {
+    return `The recipe looked for “${m[1]}” but couldn't find it — a column may be named differently in this month's file, or a file was dropped into the wrong slot.`;
+  }
+  if (last.includes("No input files loaded")) return "Drop your files first, then the recipe will run.";
+  if ((m = last.match(/No output table named ['"]?([^'"]+)/))) return `The recipe didn't produce a “${m[1]}” table.`;
+  if (last.includes("produced no output tables")) return "The recipe finished but produced no table to show.";
+  if (last.match(/(ValueError|TypeError|AttributeError|MergeError):/)) {
+    return `${last.replace(/^\w+Error:\s*/, "")} — this usually means the data looks different from what the recipe expects.`;
+  }
+  return last;
 }
 
 function downloadBlob(name: string, content: string, type: string) {
