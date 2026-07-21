@@ -89,6 +89,8 @@ export interface VersionSummary {
   version_no: number;
   created_at: string;
   prompt: string | null;
+  params: unknown;
+  param_values: unknown;
 }
 
 export interface RecipePayload {
@@ -134,4 +136,18 @@ export function getRecipe(id: string): Promise<RecipeDetail> {
 
 export function listVersions(id: string): Promise<VersionSummary[]> {
   return fetch(`/api/recipes/${id}/versions`, { credentials: "include" }).then(j<VersionSummary[]>);
+}
+
+export function renameRecipe(id: string, name: string): Promise<RecipeDetail> {
+  return fetch(`/api/recipes/${id}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    credentials: "include",
+    body: JSON.stringify({ name }),
+  }).then(j<RecipeDetail>);
+}
+
+export async function deleteRecipe(id: string): Promise<void> {
+  const r = await fetch(`/api/recipes/${id}`, { method: "DELETE", credentials: "include" });
+  if (!r.ok) throw new Error(`Delete failed (${r.status})`);
 }

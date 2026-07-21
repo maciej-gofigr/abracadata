@@ -5,7 +5,7 @@ import { DropZone } from "./components/DropZone";
 import { PlotView } from "./components/PlotView";
 import { pyWorker } from "./lib/pyodide";
 import { buildRecipe, parseRecipe } from "./lib/recipe";
-import { prettify } from "./lib/format";
+import { paramSettings, prettify } from "./lib/format";
 import {
   SAMPLE_CUSTOMERS_CSV,
   SAMPLE_ORDERS_CSV,
@@ -15,11 +15,13 @@ import {
 import {
   addVersion,
   createRecipe,
+  deleteRecipe,
   explanationOnly,
   generateRecipe,
   getRecipe,
   listRecipes,
   listVersions,
+  renameRecipe,
   type RecipeSummary,
   type VersionSummary,
 } from "./lib/api";
@@ -52,6 +54,9 @@ export function App() {
   const [showCode, setShowCode] = useState(false);
   const [aliasDraft, setAliasDraft] = useState<Record<string, string>>({});
   const [expectedInputs, setExpectedInputs] = useState<{ alias: string; columns: string[] }[]>([]);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     pyWorker.warmUp();
@@ -300,6 +305,42 @@ export function App() {
     }
   }
 
+  function startRename(r: RecipeSummary) {
+    setRenamingId(r.id);
+    setRenameDraft(r.name);
+    setConfirmDeleteId(null);
+  }
+
+  async function commitRename(id: string) {
+    const name = renameDraft.trim();
+    setRenamingId(null);
+    const existing = library.find((r) => r.id === id);
+    if (!name || (existing && existing.name === name)) return;
+    try {
+      const d = await renameRecipe(id, name);
+      if (id === currentRecipeId) setCurrentRecipeName(d.name);
+      await refreshLibrary();
+    } catch (err) {
+      setLibMsg(`Rename failed: ${errorMessage(err)}`);
+    }
+  }
+
+  async function removeRecipe(id: string) {
+    setConfirmDeleteId(null);
+    try {
+      await deleteRecipe(id);
+      if (id === currentRecipeId) {
+        setCurrentRecipeId(null);
+        setCurrentRecipeName("");
+        setVersions([]);
+      }
+      setLibMsg("Recipe deleted");
+      await refreshLibrary();
+    } catch (err) {
+      setLibMsg(`Delete failed: ${errorMessage(err)}`);
+    }
+  }
+
   function reset() {
     setInputs([]);
     setScript(null);
@@ -356,19 +397,59 @@ export function App() {
             {library.map((r) => (
               <li key={r.id} className={r.id === currentRecipeId ? "active" : ""}>
                 <div className="recipe-row">
-                  <span className="recipe-name">{r.name}</span>
+                  {renamingId === r.id ? (
+                    <input
+                      className="rename-input"
+                      autoFocus
+                      value={renameDraft}
+                      aria-label="Recipe name"
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onBlur={() => commitRename(r.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                    />
+                  ) : (
+                    <span className="recipe-name">{r.name}</span>
+                  )}
                   <span className="muted">v{r.version_count} · {relTime(r.updated_at)}</span>
                   <button className="btn ghost" onClick={() => openRecipe(r.id)}>Open</button>
+                  <button className="icon-btn sm" title="Rename" aria-label="Rename recipe" onClick={() => startRename(r)}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 00-3-3L5 17v3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="M13.5 6.5l3 3" stroke="currentColor" strokeWidth="1.7" /></svg>
+                  </button>
+                  <button className="icon-btn sm danger" title="Delete" aria-label="Delete recipe" onClick={() => { setConfirmDeleteId(r.id); setRenamingId(null); }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M10 7V5a1 1 0 011-1h2a1 1 0 011 1v2m-7 0l1 12a1 1 0 001 1h4a1 1 0 001-1l1-12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
                 </div>
+                {confirmDeleteId === r.id && (
+                  <div className="confirm-row">
+                    <span>Delete “{r.name}” and its {r.version_count} version{r.version_count === 1 ? "" : "s"}? This can't be undone.</span>
+                    <button className="btn danger" onClick={() => removeRecipe(r.id)}>Delete</button>
+                    <button className="btn ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                  </div>
+                )}
                 {r.id === currentRecipeId && versions.length > 0 && (
                   <ul className="version-list">
-                    {versions.map((v) => (
-                      <li key={v.id}>
-                        <span className="vno">v{v.version_no}</span>
-                        <span className="muted">{relTime(v.created_at)}</span>
-                        {v.prompt && <span className="vprompt">“{v.prompt}”</span>}
-                      </li>
-                    ))}
+                    {versions.map((v) => {
+                      const settings = paramSettings(v.params, v.param_values);
+                      return (
+                        <li key={v.id}>
+                          <span className="vno">v{v.version_no}</span>
+                          <span className="muted">{relTime(v.created_at)}</span>
+                          {v.prompt && <span className="vprompt">“{v.prompt}”</span>}
+                          {settings.length > 0 && (
+                            <span className="vsettings">
+                              {settings.map((s) => (
+                                <span className="vsetting" key={s.label}>
+                                  {s.label}: <b>{s.value}</b>
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </li>

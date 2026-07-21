@@ -147,6 +147,13 @@ def test_param_values_round_trip(client: TestClient) -> None:
     )
     assert r.json()["current_version"]["param_values"] == {"min_amount": 250}
 
+    # The version list surfaces each version's params + saved values.
+    versions = client.get(f"/recipes/{recipe_id}/versions").json()
+    by_no = {v["version_no"]: v for v in versions}
+    assert by_no[1]["param_values"] == {"min_amount": 500}
+    assert by_no[1]["params"][0]["name"] == "min_amount"
+    assert by_no[2]["param_values"] == {"min_amount": 250}
+
     # Omitting param_values defaults to an empty dict (back-compat).
     r = client.post(
         "/recipes",

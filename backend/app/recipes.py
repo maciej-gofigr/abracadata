@@ -77,6 +77,8 @@ class VersionListItem(BaseModel):
     version_no: int
     created_at: datetime
     prompt: Optional[str] = None
+    params: Any = Field(default_factory=list)
+    param_values: Any = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -235,6 +237,8 @@ def list_versions(
             version_no=v.version_no,
             created_at=v.created_at,
             prompt=v.prompt,
+            params=v.params_json,
+            param_values=v.param_values_json,
         )
         for v in versions
     ]
