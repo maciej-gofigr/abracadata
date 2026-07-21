@@ -13,6 +13,8 @@ export interface ApplyRecipe {
   params: RecipeParam[];
   paramValues: ParamValues;
   inputs: { alias: string; columns: string[] }[];
+  /** Built-in example files (templates only) — enables one-click "Try with example". */
+  samples?: { alias: string; filename: string; csv: string }[];
 }
 
 interface Slot {
@@ -103,6 +105,25 @@ export function ApplyView({
     }
   }
 
+  async function loadSampleData() {
+    if (!recipe.samples || loadingSlot) return;
+    setSlotError(null);
+    try {
+      for (const s of recipe.samples) {
+        setLoadingSlot(s.alias);
+        const buffer = new TextEncoder().encode(s.csv).buffer as ArrayBuffer;
+        const { preview } = await pyWorker.loadInput(s.alias, s.filename, buffer);
+        setSlots((prev) => ({ ...prev, [s.alias]: { fileName: s.filename, preview } }));
+        filledRef.current.add(s.alias);
+      }
+      setLoadingSlot(null);
+      if (slotAliases.every((a) => filledRef.current.has(a))) void run(paramValues);
+    } catch (err) {
+      setLoadingSlot(null);
+      setSlotError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function clearSlot(alias: string) {
     await pyWorker.removeInput(alias);
     filledRef.current.delete(alias);
@@ -170,6 +191,11 @@ export function ApplyView({
       <h2 className="apply-section-title">
         Drop your files
         <span className="muted"> — one per slot</span>
+        {recipe.samples && filled.length === 0 && (
+          <button className="btn primary try-example" disabled={!!loadingSlot} onClick={loadSampleData}>
+            {loadingSlot ? <><span className="spinner" aria-hidden="true" />Loading…</> : "▶ Try with example data"}
+          </button>
+        )}
       </h2>
       <div className="slots-grid">
         {slotSpecs.map((inp) => {

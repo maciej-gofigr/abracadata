@@ -1271,6 +1271,7 @@ function templateToApply(t: Template): ApplyRecipe {
     params: t.params,
     paramValues: defaultsOf(t.params),
     inputs: t.inputs,
+    samples: t.samples,
   };
 }
 
