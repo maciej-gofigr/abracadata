@@ -78,6 +78,7 @@ export interface RecipeDetail {
     version_no: number;
     script: string;
     params: unknown;
+    param_values: unknown;
     inputs: unknown;
     prompt: string | null;
   } | null;
@@ -93,6 +94,7 @@ export interface VersionSummary {
 export interface RecipePayload {
   script: string;
   params: unknown;
+  param_values: unknown;
   inputs: unknown;
   prompt?: string;
 }

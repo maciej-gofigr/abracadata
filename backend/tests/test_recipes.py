@@ -1,33 +1,50 @@
 """Tests for the recipe persistence + versioning API.
 
-We do NOT import ``app.main`` (owned by another process). Instead we build a
-minimal FastAPI app, mount the recipes router, and use a temp sqlite DB. The
-``DATABASE_URL`` env var is set BEFORE importing any ``app`` module so the
-engine binds to the temp file.
+We do NOT import ``app.main`` (owned by another process). We mount the recipes
+router on a minimal FastAPI app and override ``get_db`` with a session bound to
+an isolated temp sqlite DB. Overriding the dependency (rather than relying on
+the ``DATABASE_URL`` env var) keeps these tests isolated from the shared module
+engine and the real dev DB regardless of test import order.
 """
 
 from __future__ import annotations
 
 import os
 import tempfile
-
-# Point the app at an isolated temp sqlite DB before importing app modules.
-_TMP_DB = os.path.join(tempfile.mkdtemp(prefix="recipes_test_"), "test.db")
-os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DB}"
+from typing import Iterator
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import init_db
+from app.db import Base, get_db
 from app.recipes import router as recipes_router
+
+_TMP_DB = os.path.join(tempfile.mkdtemp(prefix="recipes_test_"), "test.db")
+_test_engine = create_engine(
+    f"sqlite:///{_TMP_DB}", connect_args={"check_same_thread": False}, future=True
+)
+_TestSession = sessionmaker(bind=_test_engine, autoflush=False, autocommit=False, future=True)
 
 
 @pytest.fixture(scope="module")
 def app() -> FastAPI:
-    init_db()
+    import app.models  # noqa: F401 — register tables on Base.metadata
+
+    Base.metadata.create_all(bind=_test_engine)
+
+    def _override_get_db() -> Iterator[Session]:
+        db = _TestSession()
+        try:
+            yield db
+        finally:
+            db.close()
+
     fastapi_app = FastAPI()
     fastapi_app.include_router(recipes_router)
+    fastapi_app.dependency_overrides[get_db] = _override_get_db
     return fastapi_app
 
 
@@ -101,6 +118,41 @@ def test_create_list_get_version_flow(client: TestClient) -> None:
     r = client.patch(f"/recipes/{recipe_id}", json={"name": "Renamed"})
     assert r.status_code == 200
     assert r.json()["name"] == "Renamed"
+
+
+def test_param_values_round_trip(client: TestClient) -> None:
+    # Saving last-used knob values persists them and reopening restores them.
+    r = client.post(
+        "/recipes",
+        json={
+            "name": "Knobbed",
+            "script": "print('x')",
+            "params": [{"name": "min_amount", "label": "Min", "type": "currency", "default": 100}],
+            "param_values": {"min_amount": 500},
+            "inputs": [],
+        },
+    )
+    assert r.status_code == 201, r.text
+    recipe_id = r.json()["id"]
+    assert r.json()["current_version"]["param_values"] == {"min_amount": 500}
+
+    # Reopen (GET) returns the saved values, not the spec default.
+    detail = client.get(f"/recipes/{recipe_id}").json()
+    assert detail["current_version"]["param_values"] == {"min_amount": 500}
+
+    # A new version carries its own values.
+    r = client.post(
+        f"/recipes/{recipe_id}/versions",
+        json={"script": "print('y')", "params": [], "param_values": {"min_amount": 250}, "inputs": []},
+    )
+    assert r.json()["current_version"]["param_values"] == {"min_amount": 250}
+
+    # Omitting param_values defaults to an empty dict (back-compat).
+    r = client.post(
+        "/recipes",
+        json={"name": "No knobs", "script": "print('z')", "params": [], "inputs": []},
+    )
+    assert r.json()["current_version"]["param_values"] == {}
 
 
 def test_ownership_isolation(app: FastAPI) -> None:

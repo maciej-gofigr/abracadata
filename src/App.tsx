@@ -241,6 +241,7 @@ export function App() {
     const payload = {
       script,
       params,
+      param_values: paramValues,
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
       prompt: messages.filter((m) => m.role === "user").slice(-1)[0]?.text,
     };
@@ -278,7 +279,10 @@ export function App() {
       setScript(cv.script);
       const ps = (Array.isArray(cv.params) ? cv.params : []) as RecipeParam[];
       setParams(ps);
-      const values = defaultsOf(ps);
+      // Restore the values the user last saved, falling back to generated
+      // defaults for any knob the saved values don't cover.
+      const saved = cv.param_values && typeof cv.param_values === "object" ? (cv.param_values as ParamValues) : {};
+      const values = { ...defaultsOf(ps), ...saved };
       setParamValues(values);
       setCurrentRecipeId(d.id);
       setCurrentRecipeName(d.name);
@@ -329,7 +333,9 @@ export function App() {
       created: new Date().toISOString(),
       prompts: messages.filter((m) => m.role === "user").map((m) => m.text),
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
-      params,
+      // Bake the current knob values in as defaults so the standalone CLI
+      // remembers the user's tweaks too.
+      params: params.map((p) => (p.name in paramValues ? { ...p, default: paramValues[p.name] } : p)),
     };
     downloadBlob(`${(meta.name || "recipe").replace(/\s+/g, "_")}.py`, buildRecipe(script, meta), "text/x-python");
   }

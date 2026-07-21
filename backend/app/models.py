@@ -67,6 +67,9 @@ class RecipeVersion(Base):
     version_no: Mapped[int] = mapped_column(Integer)
     script: Mapped[str] = mapped_column(Text)
     params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Last-used values for the knobs (keyed by param name) so reopening a recipe
+    # restores the user's tweaks rather than resetting to the generated defaults.
+    param_values_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     inputs_json: Mapped[Any] = mapped_column(JSON, default=list)
     prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=_now)

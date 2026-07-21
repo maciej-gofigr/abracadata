@@ -28,6 +28,7 @@ class RecipeCreate(BaseModel):
     name: str
     script: str
     params: Any = Field(default_factory=list)
+    param_values: Any = Field(default_factory=dict)
     inputs: Any = Field(default_factory=list)
     prompt: Optional[str] = None
 
@@ -35,6 +36,7 @@ class RecipeCreate(BaseModel):
 class VersionCreate(BaseModel):
     script: str
     params: Any = Field(default_factory=list)
+    param_values: Any = Field(default_factory=dict)
     inputs: Any = Field(default_factory=list)
     prompt: Optional[str] = None
 
@@ -48,6 +50,7 @@ class CurrentVersion(BaseModel):
     version_no: int
     script: str
     params: Any
+    param_values: Any = Field(default_factory=dict)
     inputs: Any
     prompt: Optional[str] = None
     created_at: datetime
@@ -97,6 +100,7 @@ def _current_version_schema(db: Session, recipe: Recipe) -> Optional[CurrentVers
         version_no=v.version_no,
         script=v.script,
         params=v.params_json,
+        param_values=v.param_values_json,
         inputs=v.inputs_json,
         prompt=v.prompt,
         created_at=v.created_at,
@@ -132,6 +136,7 @@ def create_recipe(
         version_no=1,
         script=body.script,
         params_json=body.params,
+        param_values_json=body.param_values,
         inputs_json=body.inputs,
         prompt=body.prompt,
     )
@@ -199,6 +204,7 @@ def add_version(
         version_no=next_no,
         script=body.script,
         params_json=body.params,
+        param_values_json=body.param_values,
         inputs_json=body.inputs,
         prompt=body.prompt,
     )
