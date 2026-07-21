@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { APP_NAME, APP_TAGLINE } from "./branding";
+import { APP_NAME } from "./branding";
 import { DataTable } from "./components/DataTable";
 import { DropZone } from "./components/DropZone";
 import { PlotView } from "./components/PlotView";
-import { ScriptPanel } from "./components/ScriptPanel";
 import { pyWorker } from "./lib/pyodide";
 import { buildRecipe, parseRecipe } from "./lib/recipe";
+import { prettify } from "./lib/format";
 import {
   SAMPLE_CUSTOMERS_CSV,
   SAMPLE_ORDERS_CSV,
@@ -38,19 +38,19 @@ export function App() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
 
-  // describe → generate
   const [describeText, setDescribeText] = useState("");
   const [generating, setGenerating] = useState(false);
   const [assistantText, setAssistantText] = useState("");
   const [genError, setGenError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
-  // library (persistence + versioning)
   const [library, setLibrary] = useState<RecipeSummary[]>([]);
   const [currentRecipeId, setCurrentRecipeId] = useState<string | null>(null);
   const [currentRecipeName, setCurrentRecipeName] = useState("");
   const [versions, setVersions] = useState<VersionSummary[]>([]);
   const [libMsg, setLibMsg] = useState<string | null>(null);
+  const [showCode, setShowCode] = useState(false);
+  const [aliasDraft, setAliasDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
     pyWorker.warmUp();
@@ -61,7 +61,7 @@ export function App() {
     try {
       setLibrary(await listRecipes());
     } catch {
-      /* backend may be down in dev; ignore */
+      /* backend may be down in dev */
     }
   }
 
@@ -96,7 +96,7 @@ export function App() {
   }
 
   async function loadDataFile(file: File, current: InputFile[]): Promise<InputFile | null> {
-    setLoadingMsg(`Reading ${file.name}… (first load also fetches the Python runtime)`);
+    setLoadingMsg(`Reading ${file.name}… (first load also fetches the runtime, ~10s)`);
     try {
       const alias = uniqueAlias(aliasFromFilename(file.name), current);
       const buffer = await file.arrayBuffer();
@@ -130,7 +130,7 @@ export function App() {
     setFileError(null);
     setRunError(null);
     setOutput(null);
-    setLoadingMsg("Loading sample files… (first load also fetches the Python runtime, ~10s)");
+    setLoadingMsg("Loading sample files… (first load also fetches the runtime, ~10s)");
     try {
       await pyWorker.clearInputs();
       const enc = new TextEncoder();
@@ -145,6 +145,8 @@ export function App() {
       setParams(SAMPLE_PARAMS);
       const values = defaultsOf(SAMPLE_PARAMS);
       setParamValues(values);
+      setMessages([]);
+      setAssistantText("");
       setCurrentRecipeId(null);
       setCurrentRecipeName("Revenue by region");
       await run(SAMPLE_SCRIPT, values, next);
@@ -180,9 +182,13 @@ export function App() {
         setGenerating(false);
         if (generated) {
           setScript(generated);
-          void run(generated, paramValues, inputs);
+          // AI recipes don't declare tunable params yet — clear the panel so it
+          // never shows stale controls that don't match the current recipe.
+          setParams([]);
+          setParamValues({});
+          void run(generated, {}, inputs);
         } else {
-          setGenError("The model didn't return a script — try rephrasing.");
+          setGenError("The model didn't return a recipe — try rephrasing.");
         }
       },
       (msg) => {
@@ -198,6 +204,25 @@ export function App() {
     if (script) void run(script, values, inputs);
   }
 
+  async function commitAlias(inp: InputFile) {
+    const raw = aliasDraft[inp.fileName];
+    setAliasDraft((d) => {
+      const next = { ...d };
+      delete next[inp.fileName];
+      return next;
+    });
+    const next = (raw ?? "").trim();
+    if (!next || next === inp.alias) return;
+    if (inputs.some((i) => i !== inp && i.alias === next)) {
+      setFileError(`Another slot is already named “${next}”.`);
+      return;
+    }
+    await pyWorker.renameInput(inp.alias, next);
+    const updated = inputs.map((i) => (i === inp ? { ...i, alias: next } : i));
+    setInputs(updated);
+    if (script) void run(script, paramValues, updated);
+  }
+
   async function saveToLibrary() {
     if (!script) return;
     const payload = {
@@ -209,16 +234,16 @@ export function App() {
     try {
       if (currentRecipeId) {
         const d = await addVersion(currentRecipeId, payload);
-        setLibMsg(`Saved v${d.current_version?.version_no} of "${d.name}"`);
+        setLibMsg(`Saved v${d.current_version?.version_no}`);
+        await refreshVersions(currentRecipeId);
       } else {
         const name = currentRecipeName || messages.find((m) => m.role === "user")?.text?.slice(0, 48) || "Untitled recipe";
         const d = await createRecipe({ name, ...payload });
         setCurrentRecipeId(d.id);
         setCurrentRecipeName(d.name);
-        setLibMsg(`Saved "${d.name}" to your library`);
+        setLibMsg(`Saved “${d.name}”`);
       }
       await refreshLibrary();
-      if (currentRecipeId) await refreshVersions(currentRecipeId);
     } catch (err) {
       setLibMsg(`Save failed: ${errorMessage(err)}`);
     }
@@ -244,10 +269,13 @@ export function App() {
       setParamValues(values);
       setCurrentRecipeId(d.id);
       setCurrentRecipeName(d.name);
-      setLibMsg(`Opened "${d.name}" (v${cv.version_no})`);
       await refreshVersions(d.id);
-      if (inputs.length) void run(cv.script, values, inputs);
-      else setLibMsg(`Opened "${d.name}" — drop this month's files to run it`);
+      if (inputs.length) {
+        setLibMsg(`Opened “${d.name}” (v${cv.version_no})`);
+        void run(cv.script, values, inputs);
+      } else {
+        setLibMsg(`Opened “${d.name}” — drop this month's files to run it`);
+      }
     } catch (err) {
       setLibMsg(`Open failed: ${errorMessage(err)}`);
     }
@@ -267,6 +295,7 @@ export function App() {
     setCurrentRecipeId(null);
     setCurrentRecipeName("");
     setVersions([]);
+    setShowCode(false);
     void pyWorker.clearInputs();
   }
 
@@ -275,7 +304,7 @@ export function App() {
     downloadBlob(`${name.replace(/\s+/g, "_")}.csv`, csv, "text/csv");
   }
 
-  function saveRecipeFile() {
+  function downloadRecipeFile() {
     if (!script) return;
     const meta: RecipeMeta = {
       version: 2,
@@ -291,191 +320,254 @@ export function App() {
   const hasInputs = inputs.length > 0;
   const explanation = explanationOnly(assistantText);
 
-  const libraryPanel = (
-    <section className="card library">
-      <div className="card-header">
-        <h2>Recipe library</h2>
-        <span className="muted">saved &amp; versioned on the server — recipes only, never your data</span>
-      </div>
-      {library.length === 0 ? (
-        <p className="muted">No saved recipes yet. Build one, then “Save to library”.</p>
-      ) : (
-        <ul className="recipe-list">
-          {library.map((r) => (
-            <li key={r.id} className={r.id === currentRecipeId ? "active" : ""}>
-              <div className="recipe-row">
-                <span className="recipe-name">{r.name}</span>
-                <span className="muted">
-                  v{r.version_count} · {relTime(r.updated_at)}
-                </span>
-                <button onClick={() => openRecipe(r.id)}>Open</button>
-              </div>
-              {r.id === currentRecipeId && versions.length > 0 && (
-                <ul className="version-list">
-                  {versions.map((v) => (
-                    <li key={v.id}>
-                      <span className="vno">v{v.version_no}</span>
-                      <span className="muted">{relTime(v.created_at)}</span>
-                      {v.prompt && <span className="vprompt">“{v.prompt}”</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
+  const library_panel =
+    library.length > 0 ? (
+      <section className="card section library">
+        <div className="card-header">
+          <h2>Your recipes</h2>
+          <span className="count">saved &amp; versioned on the server — recipes only, never your data</span>
+        </div>
+        <div className="card-body">
+          <p className="reuse-hint">Next month, open one and drop your new files — it re-runs the same steps.</p>
+          <ul className="recipe-list">
+            {library.map((r) => (
+              <li key={r.id} className={r.id === currentRecipeId ? "active" : ""}>
+                <div className="recipe-row">
+                  <span className="recipe-name">{r.name}</span>
+                  <span className="muted">v{r.version_count} · {relTime(r.updated_at)}</span>
+                  <button className="btn ghost" onClick={() => openRecipe(r.id)}>Open</button>
+                </div>
+                {r.id === currentRecipeId && versions.length > 0 && (
+                  <ul className="version-list">
+                    {versions.map((v) => (
+                      <li key={v.id}>
+                        <span className="vno">v{v.version_no}</span>
+                        <span className="muted">{relTime(v.created_at)}</span>
+                        {v.prompt && <span className="vprompt">“{v.prompt}”</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    ) : null;
 
   return (
-    <div className="app">
-      <header>
-        <div>
-          <h1>{APP_NAME}</h1>
-          <p className="tagline">{APP_TAGLINE}</p>
+    <>
+      <div className="topbar">
+        <div className="brand">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="5" fill="var(--accent-tint)" stroke="var(--accent)" strokeWidth="1.5" />
+            <path d="M7 8.5h6M7 12h10M7 15.5h7" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
+            <circle cx="17.5" cy="8.5" r="1.4" fill="var(--accent)" />
+          </svg>
+          <span>{APP_NAME}</span>
         </div>
+        <div className="spacer" />
+        <span className="chip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 11V8a6 6 0 1112 0v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><rect x="4" y="11" width="16" height="9" rx="2" fill="currentColor" opacity=".18" /><rect x="4" y="11" width="16" height="9" rx="2" stroke="currentColor" strokeWidth="2" /></svg>
+          Runs in your browser
+        </span>
+        <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle light and dark theme" title="Toggle theme">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
+        </button>
         {hasInputs && (
-          <button className="link-btn" onClick={reset}>
-            Start over
-          </button>
+          <button className="btn ghost" onClick={reset}>Start over</button>
         )}
-      </header>
+      </div>
 
-      {!hasInputs && (
-        <>
-          <DropZone
-            onFiles={handleFiles}
-            label="Drop one or more CSV / Excel files (or a saved recipe .py)"
-            hint="Everything runs in your browser — your data never leaves this machine."
-          />
-          <p className="sample-hint">
-            No file handy?{" "}
-            <button className="link-btn" onClick={loadSample}>
-              Load sample files (orders + customers) →
-            </button>
-          </p>
-          {libraryPanel}
-        </>
-      )}
+      <main>
+        {!hasInputs && (
+          <section className="landing">
+            <div className="eyebrow">For the spreadsheet you rebuild every month</div>
+            <h1>Describe it once. <em>Re-run it forever.</em></h1>
+            <p className="lede">
+              Drop your CSV or Excel files and say what you need in plain English — join them, clean them,
+              summarize, chart. You get a reusable recipe that does the exact same thing to next month's files.
+            </p>
 
-      {loadingMsg && <div className="status">{loadingMsg}</div>}
-      {fileError && <div className="error">{fileError}</div>}
+            <DropZone
+              onFiles={handleFiles}
+              label="Drop one or more CSV / Excel files"
+              hint="Everything runs in your browser — your data never leaves this machine."
+            />
 
-      {hasInputs && (
-        <>
-          <section className="inputs-grid">
-            {inputs.map((inp) => (
-              <div className="card" key={inp.alias}>
-                <div className="card-header">
-                  <h2>
-                    <span className="alias">{inp.alias}</span>{" "}
-                    <span className="from-file">from {inp.fileName}</span>
-                  </h2>
-                  <span className="muted">
-                    {inp.preview.rowCount.toLocaleString()} rows · {inp.preview.columns.length} cols
-                  </span>
-                </div>
-                <DataTable preview={inp.preview} maxRows={6} />
-              </div>
-            ))}
-            <DropZone onFiles={handleFiles} label="＋ Add another file" compact />
-          </section>
-
-          <section className="card describe">
-            <div className="card-header">
-              <h2>Describe what you need</h2>
-              <span className="muted">plain English — the AI writes the recipe</span>
-            </div>
-            {(explanation || generating) && (
-              <div className="assistant-reply">
-                {explanation || "Thinking…"}
-                {generating && <span className="cursor">▍</span>}
-              </div>
-            )}
-            {genError && <div className="run-error"><pre>{genError}</pre></div>}
-            <div className="describe-input">
-              <textarea
-                value={describeText}
-                placeholder='e.g. "join orders to customers, then total revenue by region as a bar chart"'
-                rows={2}
-                onChange={(e) => setDescribeText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void generate();
-                  }
-                }}
-              />
-              <button className="primary" disabled={generating || !describeText.trim()} onClick={() => void generate()}>
-                {generating ? "Generating…" : "Generate"}
+            <div className="or">or try it with sample data</div>
+            <div className="samples">
+              <button className="sample-btn" onClick={loadSample}>
+                <span className="dot" /> Sample: orders + customers
               </button>
             </div>
-          </section>
 
-          {params.length > 0 && (
-            <section className="card params-card">
-              <div className="card-header">
-                <h2>Parameters</h2>
-                <span className="muted">edits re-run instantly, in your browser</span>
+            <div className="how">
+              <div className="how-step"><span className="how-num">1</span><div><div className="how-t">Drop</div><div className="how-d">One or more files, read locally in seconds.</div></div></div>
+              <div className="how-step"><span className="how-num">2</span><div><div className="how-t">Describe</div><div className="how-d">Say what you need — join, clean, summarize, chart.</div></div></div>
+              <div className="how-step"><span className="how-num">3</span><div><div className="how-t">Reuse</div><div className="how-d">Save the recipe, re-run it next month.</div></div></div>
+            </div>
+
+            {loadingMsg && <div className="status" style={{ marginTop: 24 }}>{loadingMsg}</div>}
+            {fileError && <div className="error" style={{ marginTop: 20 }}>{fileError}</div>}
+
+            {library_panel && <div style={{ marginTop: 40 }}>{library_panel}</div>}
+          </section>
+        )}
+
+        {hasInputs && (
+          <>
+            <div className="header-row">
+              <h2 className="page-title">{currentRecipeName || "Untitled recipe"}</h2>
+            </div>
+
+            {loadingMsg && <div className="status">{loadingMsg}</div>}
+            {fileError && <div className="error">{fileError}</div>}
+
+            <section className="section">
+              <div className="header-row" style={{ marginBottom: 12 }}>
+                <h2 className="page-title" style={{ fontSize: 15 }}>
+                  Your files <span className="muted">— rename a slot to reuse this recipe on next month's files</span>
+                </h2>
               </div>
-              <div className="params-grid">
-                {params.map((p) => (
-                  <ParamControl key={p.name} param={p} value={paramValues[p.name]} onChange={(v) => setParam(p.name, v)} />
+              <div className="inputs-grid">
+                {inputs.map((inp) => (
+                  <div className="card" key={inp.fileName + inp.alias}>
+                    <div className="card-header">
+                      <input
+                        className="alias-input"
+                        value={aliasDraft[inp.fileName] ?? inp.alias}
+                        aria-label="Slot name"
+                        onChange={(e) => setAliasDraft({ ...aliasDraft, [inp.fileName]: e.target.value })}
+                        onBlur={() => commitAlias(inp)}
+                        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                      />
+                      <span className="from-file">{inp.fileName}</span>
+                    </div>
+                    <DataTable preview={inp.preview} />
+                  </div>
                 ))}
               </div>
+              <div style={{ marginTop: 12 }}>
+                <DropZone onFiles={handleFiles} compact label="+ Add another file" />
+              </div>
             </section>
-          )}
 
-          {running && <div className="status">Running…</div>}
-          {runError && (
-            <div className="run-error">
-              <div className="run-error-title">That recipe didn't run:</div>
-              <pre>{runError}</pre>
-            </div>
-          )}
-
-          {output && (
-            <section className="output">
-              {output.tables.map((t) => (
-                <div className="card" key={t.name}>
-                  <div className="card-header">
-                    <h2>{t.name}</h2>
-                    <span className="muted">
-                      {t.preview.rowCount.toLocaleString()} rows · {t.preview.columns.length} cols
-                    </span>
-                    <button onClick={() => downloadTable(t.name)}>Download CSV</button>
+            <section className="card section describe">
+              <div className="card-header">
+                <h2>Describe what you need</h2>
+                <span className="count">plain English — the AI writes the recipe</span>
+              </div>
+              <div className="card-body">
+                {(explanation || generating) && (
+                  <div className="assistant-reply">
+                    {explanation || "Thinking…"}
+                    {generating && <span className="cursor">▍</span>}
                   </div>
-                  <DataTable preview={t.preview} />
+                )}
+                {genError && <div className="run-error" style={{ marginBottom: 12 }}><pre>{genError}</pre></div>}
+                <div className="describe-input">
+                  <textarea
+                    value={describeText}
+                    placeholder={'e.g. "join orders to customers, then total revenue by region as a bar chart"'}
+                    rows={2}
+                    onChange={(e) => setDescribeText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void generate();
+                      }
+                    }}
+                  />
+                  <button className="btn primary" disabled={generating || !describeText.trim()} onClick={() => void generate()}>
+                    {generating ? "Generating…" : "Generate"}
+                  </button>
                 </div>
-              ))}
-              {output.plots.map((p) => (
-                <PlotView key={p.name} spec={p} />
-              ))}
+              </div>
             </section>
-          )}
 
-          <div className="save-bar">
-            <button className="primary" onClick={saveToLibrary} disabled={!script}>
-              {currentRecipeId ? "Save new version" : "Save to library"}
-            </button>
-            {libMsg && <span className="muted">{libMsg}</span>}
-          </div>
+            {params.length > 0 && (
+              <section className="card section">
+                <div className="card-header">
+                  <h2>Adjustable settings</h2>
+                  <span className="count">edits re-run instantly, in your browser</span>
+                </div>
+                <div className="card-body">
+                  <div className="params-grid">
+                    {params.map((p) => (
+                      <ParamControl key={p.name} param={p} value={paramValues[p.name]} onChange={(v) => setParam(p.name, v)} />
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
 
-          <ScriptPanel
-            script={script}
-            running={running}
-            canRun={hasInputs}
-            onChange={setScript}
-            onRun={() => script && run(script, paramValues, inputs)}
-            onSaveRecipe={saveRecipeFile}
-          />
+            {running && <div className="status">Running…</div>}
+            {runError && (
+              <div className="run-error">
+                <div className="run-error-title">That recipe didn't run:</div>
+                <pre>{runError}</pre>
+              </div>
+            )}
 
-          {libraryPanel}
-        </>
-      )}
-    </div>
+            {output && (
+              <section className="output section">
+                {output.tables.map((t) => (
+                  <div className="card" key={t.name}>
+                    <div className="card-header">
+                      <h2>{prettify(t.name)}</h2>
+                      <span className="count">{t.preview.rowCount.toLocaleString()} rows · {t.preview.columns.length} cols</span>
+                      <button className="btn ghost" onClick={() => downloadTable(t.name)}>Download CSV</button>
+                    </div>
+                    <DataTable preview={t.preview} />
+                  </div>
+                ))}
+                {output.plots.map((p) => (
+                  <PlotView key={p.name} spec={p} />
+                ))}
+              </section>
+            )}
+
+            {script && (
+              <>
+                <div className="save-bar">
+                  <button className="btn primary" onClick={saveToLibrary}>
+                    {currentRecipeId ? "Save new version" : "Save to library"}
+                  </button>
+                  {libMsg && <span className="saved-msg">{libMsg}</span>}
+                </div>
+
+                <div className="card section disclosure">
+                  <div className="disclosure-head">
+                    <button className={`disclose-btn ${showCode ? "open" : ""}`} onClick={() => setShowCode(!showCode)} aria-expanded={showCode}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      {showCode ? "Hide the steps (Python)" : "Show the steps (Python)"}
+                    </button>
+                    <div className="spacer" />
+                    <button className="btn ghost" onClick={downloadRecipeFile}>Download recipe (.py)</button>
+                  </div>
+                  {showCode && (
+                    <div className="code">
+                      <textarea value={script} spellCheck={false} onChange={(e) => setScript(e.target.value)} />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {library_panel}
+          </>
+        )}
+      </main>
+    </>
   );
+}
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const explicit = root.getAttribute("data-theme");
+  const isDark = explicit ? explicit === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", isDark ? "light" : "dark");
 }
 
 function ParamControl({
@@ -496,9 +588,7 @@ function ParamControl({
       {param.type === "enum" ? (
         <select value={String(value)} onChange={(e) => onChange(e.target.value)}>
           {(param.options ?? []).map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
+            <option key={o} value={o}>{o}</option>
           ))}
         </select>
       ) : param.type === "bool" ? (

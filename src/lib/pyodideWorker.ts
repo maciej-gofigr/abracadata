@@ -76,6 +76,14 @@ def clear_inputs():
     _state["outputs"] = {}
     return json.dumps({"ok": True})
 
+def rename_input(old, new):
+    try:
+        if old != new and old in _state["inputs"]:
+            _state["inputs"][new] = _state["inputs"].pop(old)
+        return json.dumps({"ok": True})
+    except Exception:
+        return json.dumps({"ok": False, "error": traceback.format_exc(limit=3)})
+
 def run_script(source, params_json):
     try:
         inputs = _state["inputs"]
@@ -136,8 +144,9 @@ def export_table(name):
 
 interface WorkerRequest {
   id: number;
-  type: "init" | "clearInputs" | "loadInput" | "runScript" | "exportTable";
+  type: "init" | "clearInputs" | "loadInput" | "renameInput" | "runScript" | "exportTable";
   alias?: string;
+  oldAlias?: string;
   name?: string;
   buffer?: ArrayBuffer;
   script?: string;
@@ -185,6 +194,10 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       py.FS.writeFile("/upload.bin", new Uint8Array(msg.buffer!));
       const fn = py.globals.get("load_input");
       raw = fn(msg.alias, msg.name);
+      fn.destroy();
+    } else if (msg.type === "renameInput") {
+      const fn = py.globals.get("rename_input");
+      raw = fn(msg.oldAlias, msg.alias);
       fn.destroy();
     } else if (msg.type === "runScript") {
       const fn = py.globals.get("run_script");

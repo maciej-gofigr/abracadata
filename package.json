@@ -12,7 +12,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0",
     "plotly.js-dist-min": "^3.7.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

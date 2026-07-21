@@ -50,6 +50,10 @@ class PyWorker {
     );
   }
 
+  renameInput(oldAlias: string, alias: string) {
+    return this.call<null>({ type: "renameInput", oldAlias, alias });
+  }
+
   runScript(source: string, params: Record<string, unknown>) {
     return this.call<RunResult>({
       type: "runScript",
