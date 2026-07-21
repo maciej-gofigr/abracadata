@@ -128,6 +128,21 @@ def test_generate_rejects_malformed_transcript():
     assert r.status_code == 422
 
 
+def test_parse_suggestions():
+    assert generate._parse_suggestions('["Total by region", "Top 10 orders."]') == ["Total by region", "Top 10 orders"]
+    # tolerant of surrounding prose / markdown fences
+    assert generate._parse_suggestions('Here you go:\n```json\n["A", "B"]\n```') == ["A", "B"]
+    assert generate._parse_suggestions("not json") == []
+    assert len(generate._parse_suggestions('["1","2","3","4","5","6"]')) == 4  # capped
+
+
+def test_suggest_empty_and_mock(monkeypatch):
+    assert client.post("/suggest", json={"inputs": []}).json() == {"suggestions": []}
+    monkeypatch.setenv("MOCK_GENERATE", "1")
+    r = client.post("/suggest", json={"inputs": [{"alias": "orders", "columns": ["Amount"], "dtypes": ["float64"]}]})
+    assert r.status_code == 200 and len(r.json()["suggestions"]) >= 1
+
+
 def test_extract_script_ignores_trailing_json_knob_block():
     text = (
         "Here's a recipe.\n\n"

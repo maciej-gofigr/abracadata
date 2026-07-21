@@ -6,6 +6,21 @@ export function explanationOnly(text: string): string {
   return text.replace(/```[\s\S]*?```/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Fast (Haiku) prompt suggestions for the loaded files. Best-effort → [] on failure. */
+export function suggestPrompts(
+  inputs: { alias: string; columns: string[]; dtypes: string[] }[],
+): Promise<string[]> {
+  return fetch("/api/suggest", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ inputs }),
+  })
+    .then((r) => (r.ok ? r.json() : { suggestions: [] }))
+    .then((d) => (Array.isArray(d?.suggestions) ? (d.suggestions as string[]) : []))
+    .catch(() => []);
+}
+
 // ---------- auth (passwordless email code) ----------
 
 export function authMe(): Promise<{ email: string | null }> {

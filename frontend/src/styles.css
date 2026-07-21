@@ -253,6 +253,17 @@ tbody tr:last-child td { border-bottom: none; }
 .describe-input textarea:focus { outline: none; border-color: var(--accent); }
 .describe-input textarea:disabled { opacity: 0.6; }
 
+/* one-click prompt suggestions on file upload */
+.suggestions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.suggestions-label { font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+.suggestion-chip {
+  font: inherit; font-size: 13px; color: var(--accent); background: var(--accent-tint);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 999px;
+  padding: 6px 13px; cursor: pointer; transition: background 0.12s, border-color 0.12s;
+  text-align: left;
+}
+.suggestion-chip:hover { background: var(--surface); border-color: var(--accent); }
+
 /* agent activity trace */
 .agent-activity { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .agent-activity li { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); }

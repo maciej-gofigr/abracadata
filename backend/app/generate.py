@@ -35,6 +35,8 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 # access (sonnet-5 / opus-4-8 are AccessDenied here). "global." routes across more
 # regions than "us." → better on-demand capacity / less throttling. Override via env.
 BEDROCK_MODEL = os.environ.get("BEDROCK_MODEL", "global.anthropic.claude-sonnet-4-6")
+# Cheap/fast model for one-shot prompt suggestions on file upload.
+SUGGEST_MODEL = os.environ.get("SUGGEST_MODEL", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 MAX_TOKENS = int(os.environ.get("BEDROCK_MAX_TOKENS", "8192"))
 
 # Adaptive retries add client-side throttle handling on top of our own backoff —
@@ -223,6 +225,10 @@ class GenerateRequest(BaseModel):
     transcript: list[TurnMessage] = []
 
 
+class SuggestRequest(BaseModel):
+    inputs: list[InputSpec] = []
+
+
 def _dataset_context(inputs: list[InputSpec], allow_data_access: bool) -> str:
     lines = ["The user loaded these input tables (reference them by alias inside transform(inputs, params)):"]
     for inp in inputs:
@@ -396,6 +402,60 @@ def _stream_turn(system: str, messages: list[dict[str, Any]], tool_config: dict)
 
 def _sse(obj: dict[str, Any]) -> str:
     return f"data: {json.dumps(obj)}\n\n"
+
+
+# --------------------------------------------------------------------------- #
+# Prompt suggestions — one fast Haiku call on file upload (schema only).
+# --------------------------------------------------------------------------- #
+SUGGEST_SYSTEM = """You help non-technical office workers use a spreadsheet tool. Given the loaded table(s) and their columns, propose 3-4 SHORT, SPECIFIC, genuinely useful things they'd likely want to do — summarize, filter, rank, chart, or (if there are 2+ tables) join them. Phrase each as a plain request they could type, imperative voice, <= 12 words, concrete to the ACTUAL column names shown. Reply with ONLY a JSON array of strings — no prose, no markdown."""
+
+
+def _schema_lines(inputs: list[InputSpec]) -> str:
+    lines = []
+    for inp in inputs:
+        cols = ", ".join(
+            f"{c} ({t})" for c, t in zip(inp.columns, inp.dtypes or [""] * len(inp.columns))
+        )
+        lines.append(f'- "{inp.alias}": {cols}')
+    return "\n".join(lines)
+
+
+def _parse_suggestions(text: str) -> list[str]:
+    m = re.search(r"\[[\s\S]*\]", text)
+    if not m:
+        return []
+    try:
+        arr = json.loads(m.group(0))
+    except Exception:
+        return []
+    out: list[str] = []
+    for s in arr:
+        if isinstance(s, str) and s.strip():
+            out.append(s.strip().rstrip("."))
+        if len(out) >= 4:
+            break
+    return out
+
+
+@router.post("/suggest")
+def suggest(req: SuggestRequest) -> dict[str, list[str]]:
+    """Best-effort: returns [] on any failure so it never blocks the UI."""
+    if not req.inputs:
+        return {"suggestions": []}
+    if os.environ.get("MOCK_GENERATE"):
+        return {"suggestions": ["Total the amount by region", "Show the top 10 rows by amount", "Count rows per category"]}
+    prompt = f"Loaded tables:\n{_schema_lines(req.inputs)}\n\nSuggest 3-4 things to do. JSON array of strings only."
+    try:
+        resp = _bedrock.converse(
+            modelId=SUGGEST_MODEL,
+            system=[{"text": SUGGEST_SYSTEM}],
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 300, "temperature": 0.7},
+        )
+        text = resp["output"]["message"]["content"][0]["text"]
+        return {"suggestions": _parse_suggestions(text)}
+    except Exception:
+        return {"suggestions": []}
 
 
 def _assistant_neutral(blocks: list[dict[str, Any]]) -> dict[str, Any]:

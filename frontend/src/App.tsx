@@ -26,6 +26,7 @@ import {
   listVersions,
   renameRecipe,
   shareRecipe,
+  suggestPrompts,
   unshareRecipe,
   type RecipeDetail,
   type RecipeSummary,
@@ -57,6 +58,8 @@ export function App() {
   const [activities, setActivities] = useState<AgentActivity[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<{ question: string; askId: string | null } | null>(null);
   const [answerText, setAnswerText] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [allowDataAccess, setAllowDataAccess] = useState(() => localStorage.getItem("allowDataAccess.v1") !== "0");
   const agentAbort = useRef<AbortController | null>(null);
 
@@ -145,6 +148,27 @@ export function App() {
     setInputs(current);
     if (addedData) setActiveInputIdx(current.length - 1); // focus the file just added
     if (script && current.length && !loadedRecipe) void run(script, paramValues, current);
+    // Fresh authoring (no recipe yet): suggest a few things to try, one click each.
+    if (addedData && !loadedRecipe && !script && transcript.length === 0) void loadSuggestions(current);
+  }
+
+  async function loadSuggestions(ins: InputFile[]) {
+    if (!ins.length) return;
+    setLoadingSuggestions(true);
+    setSuggestions([]);
+    try {
+      const s = await suggestPrompts(ins.map((i) => ({ alias: i.alias, columns: i.preview.columns, dtypes: i.preview.dtypes })));
+      setSuggestions(s);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }
+
+  async function runSuggestion(s: string) {
+    if (generating) return;
+    setDescribeText("");
+    setSuggestions([]);
+    await driveAgent([...transcript, { role: "user", text: s }]);
   }
 
   async function loadDataFile(file: File, current: InputFile[]): Promise<InputFile | null> {
@@ -568,6 +592,7 @@ export function App() {
     setOutput(null);
     setRunError(null);
     setFileError(null);
+    setSuggestions([]);
     resetConversation();
     setCurrentRecipeId(null);
     setCurrentRecipeName("");
@@ -918,6 +943,17 @@ export function App() {
                 )}
 
                 {genError && <div className="run-error" style={{ marginBottom: 12 }}><pre>{genError}</pre></div>}
+
+                {!pendingQuestion && !generating && transcript.length === 0 && (loadingSuggestions || suggestions.length > 0) && (
+                  <div className="suggestions">
+                    <span className="suggestions-label">
+                      {loadingSuggestions ? <><span className="spinner" aria-hidden="true" />Thinking of ideas…</> : "Try one:"}
+                    </span>
+                    {suggestions.map((s, i) => (
+                      <button key={i} className="suggestion-chip" onClick={() => void runSuggestion(s)}>{s}</button>
+                    ))}
+                  </div>
+                )}
 
                 {pendingQuestion ? (
                   <div className="clarify">
