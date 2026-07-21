@@ -8,7 +8,7 @@ export function explanationOnly(text: string): string {
 
 /** Fast (Haiku) prompt suggestions for the loaded files. Best-effort → [] on failure. */
 export function suggestPrompts(
-  inputs: { alias: string; columns: string[]; dtypes: string[] }[],
+  inputs: { alias: string; columns: string[]; dtypes: string[]; sample_rows?: unknown[][] }[],
 ): Promise<string[]> {
   return fetch("/api/suggest", {
     method: "POST",

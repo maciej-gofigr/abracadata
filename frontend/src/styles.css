@@ -362,6 +362,10 @@ tbody tr:last-child td { border-bottom: none; }
 .share-input { flex: 1; min-width: 220px; font-family: var(--mono); font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .share-input:focus { outline: none; border-color: var(--accent); }
 
+/* ---- Gallery page (public /templates) ---- */
+.gallery-page { max-width: 1080px; margin: 0 auto; }
+.gallery-cat { margin-bottom: 26px; }
+
 /* ---- Apply view (focused run screen) ---- */
 .apply { max-width: 1080px; margin: 0 auto; }
 .apply-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }

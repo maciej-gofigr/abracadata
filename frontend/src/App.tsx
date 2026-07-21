@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { APP_NAME } from "./branding";
+import { APP_NAME, APP_TAGLINE } from "./branding";
 import { AuthModal } from "./components/AuthModal";
 import { DataTable } from "./components/DataTable";
 import { DropZone } from "./components/DropZone";
@@ -36,6 +36,7 @@ import {
 import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
 import { ParamControl, defaultsOf, type ParamValues } from "./components/ParamControl";
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
+import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
 import type { InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
 
@@ -84,6 +85,7 @@ export function App() {
   const [authOpen, setAuthOpen] = useState(false);
 
   const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared" | "template"; recipeId?: string } | null>(null);
+  const [showGallery, setShowGallery] = useState(false);
   const [sharePanelId, setSharePanelId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -92,20 +94,44 @@ export function App() {
     pyWorker.warmUp();
     void refreshLibrary();
     void authMe().then((r) => setUser(r.email)).catch(() => {});
-    // Shared link: /s/{token} -> load the recipe into the apply view.
-    const shared = window.location.pathname.match(/^\/s\/([^/]+)/);
-    if (shared) {
-      void getSharedRecipe(decodeURIComponent(shared[1]))
-        .then((s) => setApplyState({ recipe: applyRecipeFromShared(s), mode: "shared" }))
-        .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
-    }
-    // Template link: /t/{slug} -> open that template in the apply view.
-    const tpl = window.location.pathname.match(/^\/t\/([^/]+)/);
-    if (tpl) {
-      const t = templateBySlug(decodeURIComponent(tpl[1]));
-      if (t) setApplyState({ recipe: templateToApply(t), mode: "template" });
-    }
+    applyRoute(window.location.pathname);
+    const onPop = () => applyRoute(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Set view state from the current URL path (deep links, back/forward).
+  function applyRoute(path: string) {
+    const shared = path.match(/^\/s\/([^/]+)/);
+    const tpl = path.match(/^\/t\/([^/]+)/);
+    if (shared) {
+      setShowGallery(false);
+      void getSharedRecipe(decodeURIComponent(shared[1]))
+        .then((s) => {
+          setApplyState({ recipe: applyRecipeFromShared(s), mode: "shared" });
+          setMeta(`${s.name} — ${APP_NAME}`, "A shared Prestidata recipe — drop your files and run it.");
+        })
+        .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
+    } else if (tpl) {
+      const t = templateBySlug(decodeURIComponent(tpl[1]));
+      setShowGallery(false);
+      if (t) {
+        setApplyState({ recipe: templateToApply(t), mode: "template" });
+        setMeta(`${t.name} — ${APP_NAME}`, t.description);
+      } else {
+        setApplyState(null);
+      }
+    } else if (path === "/templates") {
+      setApplyState(null);
+      setShowGallery(true);
+      setMeta(`Templates — ${APP_NAME}`, GALLERY_DESC);
+    } else {
+      setApplyState(null);
+      setShowGallery(false);
+      setMeta(APP_NAME, APP_TAGLINE);
+    }
+  }
 
   async function refreshLibrary() {
     try {
@@ -157,8 +183,15 @@ export function App() {
     setLoadingSuggestions(true);
     setSuggestions([]);
     try {
-      const s = await suggestPrompts(ins.map((i) => ({ alias: i.alias, columns: i.preview.columns, dtypes: i.preview.dtypes })));
-      setSuggestions(s);
+      const payload = ins.map((i) => ({
+        alias: i.alias,
+        columns: i.preview.columns,
+        dtypes: i.preview.dtypes,
+        // Only send actual values when the user allows data access (same toggle
+        // that gates the agent) — grounds suggestions in real categories/regions.
+        ...(allowDataAccess ? { sample_rows: i.preview.rows.slice(0, 4) } : {}),
+      }));
+      setSuggestions(await suggestPrompts(payload));
     } finally {
       setLoadingSuggestions(false);
     }
@@ -429,17 +462,29 @@ export function App() {
 
   function openTemplate(t: Template) {
     void pyWorker.clearInputs();
+    setShowGallery(false);
     setApplyState({ recipe: templateToApply(t), mode: "template" });
     window.history.pushState({}, "", `/t/${t.slug}`);
+    setMeta(`${t.name} — ${APP_NAME}`, t.description);
+    window.scrollTo({ top: 0 });
+  }
+
+  function openGallery() {
+    setApplyState(null);
+    setShowGallery(true);
+    window.history.pushState({}, "", "/templates");
+    setMeta(`Templates — ${APP_NAME}`, GALLERY_DESC);
     window.scrollTo({ top: 0 });
   }
 
   function exitApply() {
-    const onDeepLink = /^\/[st]\//.test(window.location.pathname);
+    const onDeepLink = /^\/(s|t|templates)/.test(window.location.pathname);
     setApplyState(null);
+    setShowGallery(false);
     void pyWorker.clearInputs();
     if (onDeepLink) {
       window.history.pushState({}, "", "/");
+      setMeta(APP_NAME, APP_TAGLINE);
       reset();
     }
   }
@@ -783,7 +828,11 @@ export function App() {
           />
         )}
 
-        {!applyState && !hasInputs && (
+        {!applyState && showGallery && (
+          <GalleryPage onOpen={openTemplate} onHome={exitApply} />
+        )}
+
+        {!applyState && !showGallery && !hasInputs && (
           <section className="landing">
             <div className="eyebrow">For the spreadsheet you rebuild every month</div>
             <h1>Describe it once. <em>Re-run it forever.</em></h1>
@@ -830,6 +879,7 @@ export function App() {
               <div className="templates-head">
                 <h2>Start from a template</h2>
                 <span className="muted">ready-made recipes for common chores — click one, drop your file, done</span>
+                <button className="linklike" style={{ marginLeft: "auto" }} onClick={openGallery}>Browse all →</button>
               </div>
               <div className="template-grid">
                 {TEMPLATES.map((t) => (
@@ -849,7 +899,7 @@ export function App() {
           </section>
         )}
 
-        {!applyState && hasInputs && (
+        {!applyState && !showGallery && hasInputs && (
           <>
             <div className="header-row">
               <h2 className="page-title">{currentRecipeName || "Untitled recipe"}</h2>
@@ -1172,6 +1222,32 @@ function errorMessage(err: unknown): string {
 
 function shareLink(token: string): string {
   return `${window.location.origin}/s/${token}`;
+}
+
+// Client-side <head> updates for deep-linked routes (title + description + OG).
+// Static prerendered pages (scripts/prerender.mjs) set these for crawlers too.
+function setOg(prop: string, content: string) {
+  let m = document.querySelector(`meta[property="${prop}"]`);
+  if (!m) {
+    m = document.createElement("meta");
+    m.setAttribute("property", prop);
+    document.head.appendChild(m);
+  }
+  m.setAttribute("content", content);
+}
+
+function setMeta(title: string, description: string) {
+  document.title = title;
+  let m = document.querySelector('meta[name="description"]');
+  if (!m) {
+    m = document.createElement("meta");
+    m.setAttribute("name", "description");
+    document.head.appendChild(m);
+  }
+  m.setAttribute("content", description);
+  setOg("og:title", title);
+  setOg("og:description", description);
+  setOg("og:type", "website");
 }
 
 function applyRecipeFromDetail(d: RecipeDetail): ApplyRecipe | null {

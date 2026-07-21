@@ -198,6 +198,7 @@ class InputSpec(BaseModel):
     alias: str
     columns: list[str] = []
     dtypes: list[str] = []
+    sample_rows: list[list[Any]] = []  # optional: a few real rows (values), for suggestions
 
 
 class ToolCall(BaseModel):
@@ -417,6 +418,11 @@ def _schema_lines(inputs: list[InputSpec]) -> str:
             f"{c} ({t})" for c, t in zip(inp.columns, inp.dtypes or [""] * len(inp.columns))
         )
         lines.append(f'- "{inp.alias}": {cols}')
+        # A few real rows help ground suggestions in actual values (only sent when
+        # the user allows data access; otherwise sample_rows is empty).
+        for row in inp.sample_rows[:3]:
+            pairs = ", ".join(f"{c}={v}" for c, v in zip(inp.columns, row))
+            lines.append(f"    example row: {pairs}")
     return "\n".join(lines)
 
 
