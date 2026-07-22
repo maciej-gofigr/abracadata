@@ -1,4 +1,10 @@
 __pycache__
+**/__pycache__
 *.pyc
 .venv
 venv
+data
+.env
+.env.example
+Makefile
+tests

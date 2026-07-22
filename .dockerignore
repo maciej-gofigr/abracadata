@@ -1,0 +1,14 @@
+# Build-context excludes for the prod web image (context = repo root).
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.vite
+.git
+.github
+backend/data
+docs
+*.local
+.env
+**/.env

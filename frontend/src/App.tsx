@@ -40,6 +40,10 @@ import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
 import type { InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
 
+// Passwordless sign-in needs an email sender (SES). Until that's wired, the prod
+// build sets VITE_AUTH_ENABLED=false so the app is cleanly anonymous-only.
+const AUTH_ENABLED = import.meta.env.VITE_AUTH_ENABLED !== "false";
+
 export function App() {
   const [inputs, setInputs] = useState<InputFile[]>([]);
   const [script, setScript] = useState<string | null>(null);
@@ -94,7 +98,7 @@ export function App() {
   useEffect(() => {
     pyWorker.warmUp();
     void refreshLibrary();
-    void authMe().then((r) => setUser(r.email)).catch(() => {});
+    if (AUTH_ENABLED) void authMe().then((r) => setUser(r.email)).catch(() => {});
     applyRoute(window.location.pathname);
     const onPop = () => applyRoute(window.location.pathname);
     window.addEventListener("popstate", onPop);
@@ -695,7 +699,7 @@ export function App() {
         <div className="card-body">
           <p className="reuse-hint">
             Next month, open one and drop your new files — it re-runs the same steps.
-            {!user && (
+            {AUTH_ENABLED && !user && (
               <> · <button className="linklike" onClick={() => setAuthOpen(true)}>Sign in</button> to reach these from any device.</>
             )}
           </p>
@@ -809,20 +813,21 @@ export function App() {
         <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle light and dark theme" title="Toggle theme">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
         </button>
-        {user ? (
-          <span className="account">
-            <span className="account-email" title={user}>{user}</span>
-            <button className="btn ghost" onClick={signOut}>Sign out</button>
-          </span>
-        ) : (
-          <button className="btn" onClick={() => setAuthOpen(true)}>Sign in</button>
-        )}
+        {AUTH_ENABLED &&
+          (user ? (
+            <span className="account">
+              <span className="account-email" title={user}>{user}</span>
+              <button className="btn ghost" onClick={signOut}>Sign out</button>
+            </span>
+          ) : (
+            <button className="btn" onClick={() => setAuthOpen(true)}>Sign in</button>
+          ))}
         {hasInputs && (
           <button className="btn ghost" onClick={reset}>Start over</button>
         )}
       </div>
 
-      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSignedIn={onSignedIn} />}
+      {AUTH_ENABLED && authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSignedIn={onSignedIn} />}
 
       <main>
         {applyState && (

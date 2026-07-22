@@ -1,0 +1,22 @@
+# Automatic HTTPS for {$DOMAIN}. Serves the SPA + prerendered SEO pages and
+# reverse-proxies /api/* to the backend container. DOMAIN comes from the compose
+# environment. (Caddy provisions certs with no contact email by default; add a
+# `{ email you@example.com }` global block if you want expiry notifications.)
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API — strip the /api prefix (backend routes are /generate, /recipes, …).
+	handle_path /api/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1  # stream SSE (/generate) without buffering
+		}
+	}
+
+	# Static site: exact file, then a prerendered dir index (/t/{slug}/index.html,
+	# /templates/index.html), else the SPA shell for client-side routes.
+	handle {
+		root * /srv
+		try_files {path} {path}/index.html /index.html
+		file_server
+	}
+}

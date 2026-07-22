@@ -1,0 +1,60 @@
+# Prod stack for a single EC2 box. Images are built in CI and pulled from GHCR;
+# the box only runs `docker compose pull && up -d`. Bedrock creds come from the
+# EC2 instance role (no keys on the box) — see docs/DEPLOY.md.
+#
+# Deploy from /opt/prestidata with this file + a .env (see deploy/.env.example).
+
+services:
+  web:
+    image: ${IMAGE_REPO}/prestidata-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - caddy_data:/data      # persisted TLS certs
+      - caddy_config:/config
+    networks: [app]
+
+  backend:
+    image: ${IMAGE_REPO}/prestidata-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
+      BEDROCK_MODEL: ${BEDROCK_MODEL:-global.anthropic.claude-sonnet-4-6}
+      SUGGEST_MODEL: ${SUGGEST_MODEL:-global.anthropic.claude-haiku-4-5-20251001-v1:0}
+      # AUTH_DEV_ECHO and MOCK_GENERATE intentionally UNSET (off) in prod.
+    networks: [app]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks: [app]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  app:

@@ -18,7 +18,14 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./data/app.db")
 _is_sqlite = DATABASE_URL.startswith("sqlite")
 _connect_args = {"check_same_thread": False} if _is_sqlite else {}
 
-engine = create_engine(DATABASE_URL, connect_args=_connect_args, future=True)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=_connect_args,
+    future=True,
+    # For Postgres (prod), validate pooled connections so a DB restart / idle
+    # timeout doesn't surface as a stale-connection error.
+    pool_pre_ping=not _is_sqlite,
+)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 

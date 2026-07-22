@@ -7,6 +7,7 @@ A thin service that never executes user-generated code. Responsibilities:
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -26,9 +27,13 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="DataRecipes API", lifespan=lifespan)
 
+# In prod the SPA and API are same-origin (served by Caddy), so CORS isn't
+# exercised; these origins are for local dev. Override with CORS_ORIGINS
+# (comma-separated) if the frontend is ever served from a different origin.
+_cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:8080")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8080"],
+    allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
