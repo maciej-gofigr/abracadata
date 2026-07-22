@@ -37,6 +37,14 @@ export type ParamType =
   | "bool"
   | "text";
 
+/** Where a choice param's dropdown values come from — resolved from the actual
+ * loaded data at render time, so the options adapt to the user's file. */
+export interface ParamSource {
+  from: "columns" | "values";
+  input?: string; // which input alias (defaults to the only/first input)
+  column?: string; // for "values": the column whose distinct values to offer
+}
+
 /** An inferred, user-adjustable knob (default = the value the recipe first used). */
 export interface RecipeParam {
   name: string;
@@ -44,6 +52,7 @@ export interface RecipeParam {
   type: ParamType;
   default: string | number | boolean;
   options?: string[];
+  source?: ParamSource; // data-driven dropdown options (columns or a column's values)
   min?: number;
   max?: number;
   step?: number;

@@ -91,6 +91,23 @@ def remove_input(alias):
     except Exception:
         return json.dumps({"ok": False, "error": traceback.format_exc(limit=2)})
 
+def distinct_values(alias, column, limit):
+    # Distinct values of a column (case-insensitive), for a param dropdown.
+    try:
+        df = _state["inputs"].get(alias)
+        if df is None:
+            return json.dumps({"ok": True, "values": []})
+        m = {str(c).strip().lower(): c for c in df.columns}
+        col = m.get(str(column).strip().lower())
+        if col is None:
+            return json.dumps({"ok": True, "values": []})
+        s = df[col].dropna().astype(str).str.strip()
+        s = s[s != ""]
+        vals = sorted(pd.unique(s).tolist())[: int(limit or 100)]
+        return json.dumps({"ok": True, "values": [str(v) for v in vals]}, default=_json_default)
+    except Exception:
+        return json.dumps({"ok": True, "values": []})
+
 def _execute(source, params):
     """exec the recipe, call transform(...), and normalize to (tables, plots)."""
     inputs = _state["inputs"]
@@ -220,6 +237,7 @@ interface WorkerRequest {
     | "loadInput"
     | "renameInput"
     | "removeInput"
+    | "distinctValues"
     | "runScript"
     | "exportTable"
     | "previewRows"
@@ -234,6 +252,7 @@ interface WorkerRequest {
   table?: string;
   column?: string;
   n?: number;
+  limit?: number;
   includeValues?: boolean;
 }
 
@@ -289,6 +308,10 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     } else if (msg.type === "removeInput") {
       const fn = py.globals.get("remove_input");
       raw = fn(msg.alias);
+      fn.destroy();
+    } else if (msg.type === "distinctValues") {
+      const fn = py.globals.get("distinct_values");
+      raw = fn(msg.alias, msg.column, msg.limit ?? 100);
       fn.destroy();
     } else if (msg.type === "runScript") {
       const fn = py.globals.get("run_script");

@@ -58,6 +58,10 @@ class PyWorker {
     return this.call<null>({ type: "removeInput", alias });
   }
 
+  distinctValues(alias: string, column: string, limit = 100) {
+    return this.call<{ values: string[] }>({ type: "distinctValues", alias, column, limit });
+  }
+
   runScript(source: string, params: Record<string, unknown>) {
     return this.call<RunResult>({
       type: "runScript",

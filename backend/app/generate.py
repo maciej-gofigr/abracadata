@@ -122,7 +122,11 @@ THE RECIPE (the `script` you write and submit)
 ADJUSTABLE SETTINGS (the `params` you submit)
 - Identify 0-4 simple scalars a non-technical user might tweak later WITHOUT re-describing the recipe: thresholds, a group-by column, a top-N count, a date cutoff, an on/off toggle. Don't invent knobs that aren't central to the request.
 - In the script, read each knob via params.get("key", DEFAULT) — using .get with a default means the recipe still runs if a value is absent.
-- submit_recipe's `params` is an array of objects: {"name": the exact params key, "label": short human label, "type": "number"|"currency"|"date"|"enum"|"bool"|"text", "default": the default value}. Optional: "options" (array of strings, REQUIRED for "enum"), "min"/"max"/"step" (number/currency), "help" (short hint). Use "currency" for money, "enum" (with options) for a value from a fixed set like a column name. Every knob's name must be a key the script reads. Use [] if there are no sensible knobs.
+- submit_recipe's `params` is an array of objects: {"name": the exact params key, "label": short human label, "type": "number"|"currency"|"date"|"enum"|"bool"|"text", "default": the default value}. Optional: "options" (array of strings), "min"/"max"/"step" (number/currency), "help" (short hint). Use "currency" for money. Every knob's name must be a key the script reads. Use [] if there are no sensible knobs.
+- For a choice whose valid values come from the USER'S DATA, add a "source" (a data-driven dropdown; the user can still type free-form) INSTEAD of hardcoding "options":
+    "source": {"from": "columns", "input": "<alias>"}   — the value is a COLUMN NAME; the UI offers that input's actual columns. Omit "input" if there's only one.
+    "source": {"from": "values", "input": "<alias>", "column": "<Column>"}   — the value is one of the DISTINCT VALUES in that column.
+  Use "source" for a group-by column, a key/join column, or a category/status/region to filter by — it adapts to whatever file the user drops. In the script read it via params.get and resolve columns case-insensitively (and tolerate a value not present). Reserve static "options" for a truly fixed set.
 
 Keep explanations plain and short (1-3 sentences, no jargon). When revising after user feedback, produce the full updated script and re-test it."""
 
@@ -302,6 +306,20 @@ def extract_script(text: str) -> str | None:
 _ALLOWED_PARAM_TYPES = {"number", "currency", "date", "enum", "bool", "text"}
 
 
+def _clean_source(src: Any) -> dict[str, Any] | None:
+    """Validate a param's data-driven `source` (dropdown from columns / values)."""
+    if not isinstance(src, dict) or src.get("from") not in ("columns", "values"):
+        return None
+    out: dict[str, Any] = {"from": src["from"]}
+    if isinstance(src.get("input"), str) and src["input"]:
+        out["input"] = src["input"]
+    if isinstance(src.get("column"), str) and src["column"]:
+        out["column"] = src["column"]
+    if out["from"] == "values" and "column" not in out:
+        return None  # a value dropdown needs a column to read from
+    return out
+
+
 def _sanitize_params(data: Any) -> list[dict[str, Any]]:
     if not isinstance(data, list):
         return []
@@ -315,14 +333,17 @@ def _sanitize_params(data: Any) -> list[dict[str, Any]]:
         ptype = item.get("type")
         if ptype not in _ALLOWED_PARAM_TYPES:
             ptype = "text"
-        if ptype == "enum" and not (isinstance(item.get("options"), list) and item["options"]):
-            continue
+        src = _clean_source(item.get("source"))
+        if ptype == "enum" and not src and not (isinstance(item.get("options"), list) and item["options"]):
+            continue  # a static enum with no options and no data source can't render
         knob: dict[str, Any] = {
             "name": name,
             "label": item.get("label") if isinstance(item.get("label"), str) and item.get("label") else name,
             "type": ptype,
             "default": item["default"],
         }
+        if src:
+            knob["source"] = src
         for key in ("options", "min", "max", "step", "help"):
             if item.get(key) is not None:
                 knob[key] = item[key]

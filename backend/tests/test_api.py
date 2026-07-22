@@ -161,6 +161,22 @@ def test_extract_script_ignores_trailing_json_knob_block():
     ]
 
 
+def test_sanitize_params_source():
+    text = (
+        "```json\n[" +
+        '{"name":"group_by","type":"enum","default":"Region","source":{"from":"columns","input":"orders"}},' +
+        '{"name":"status","type":"enum","default":"paid","source":{"from":"values","input":"orders","column":"Status"}},' +
+        '{"name":"bad","type":"enum","default":"x","source":{"from":"values","input":"o"}},'  # values w/o column -> source dropped -> no options -> whole knob dropped
+        '{"name":"junk","type":"enum","default":"x","source":{"from":"nope"}}'  # invalid source -> dropped (no options)
+        "]\n```"
+    )
+    params = generate.extract_params(text)
+    names = [p["name"] for p in params]
+    assert names == ["group_by", "status"]
+    assert params[0]["source"] == {"from": "columns", "input": "orders"}
+    assert params[1]["source"] == {"from": "values", "input": "orders", "column": "Status"}
+
+
 def test_extract_params_sanitizes_bad_specs():
     # enum without options is dropped; unknown type coerces to text; junk skipped
     text = (

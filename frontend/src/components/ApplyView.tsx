@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { pyWorker } from "../lib/pyodide";
 import { friendlyRunError, prettify } from "../lib/format";
-import { ParamControl, defaultsOf, type ParamValues } from "./ParamControl";
+import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./ParamControl";
 import { DataTable } from "./DataTable";
 import { PlotView } from "./PlotView";
 import type { InputFile, RecipeParam, RunResult, TablePreview } from "../types";
@@ -51,6 +51,7 @@ export function ApplyView({
   // Which slots are filled — tracked in a ref so independent, concurrent drops
   // don't race on stale state when deciding whether all slots are ready.
   const filledRef = useRef<Set<string>>(new Set());
+  const paramRunTimer = useRef<number | undefined>(undefined);
   const [loadingSlot, setLoadingSlot] = useState<string | null>(null);
   const [paramValues, setParamValues] = useState<ParamValues>(() => ({
     ...defaultsOf(recipe.params),
@@ -73,6 +74,10 @@ export function ApplyView({
 
   const filled = slotAliases.filter((a) => slots[a]);
   const allFilled = filled.length === slotAliases.length;
+  const paramOptions = useParamOptions(
+    recipe.params,
+    filled.map((a) => ({ alias: a, columns: slots[a]!.preview.columns })),
+  );
 
   async function run(values: ParamValues) {
     setRunning(true);
@@ -135,7 +140,11 @@ export function ApplyView({
   function setParam(name: string, value: string | number | boolean) {
     const values = { ...paramValues, [name]: value };
     setParamValues(values);
-    if (filledRef.current.size === slotAliases.length) void run(values);
+    // Debounced so typing a combobox value doesn't run on every keystroke.
+    if (filledRef.current.size === slotAliases.length) {
+      if (paramRunTimer.current) clearTimeout(paramRunTimer.current);
+      paramRunTimer.current = window.setTimeout(() => void run(values), 400);
+    }
   }
 
   function loadedInputs(): InputFile[] {
@@ -233,7 +242,7 @@ export function ApplyView({
           <div className="card"><div className="card-body">
             <div className="params-grid">
               {recipe.params.map((p) => (
-                <ParamControl key={p.name} param={p} value={paramValues[p.name]} onChange={(v) => setParam(p.name, v)} />
+                <ParamControl key={p.name} param={p} value={paramValues[p.name]} options={paramOptions[p.name]} onChange={(v) => setParam(p.name, v)} />
               ))}
             </div>
           </div></div>

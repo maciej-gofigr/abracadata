@@ -53,8 +53,8 @@ export const TEMPLATES: Template[] = [
     icon: "📊",
     description: "Group a file by a category column and total up a value — with a bar chart. The classic pivot-table summary.",
     params: [
-      { name: "category_column", label: "Group by column", type: "text", default: "Category", help: "The column to group rows by" },
-      { name: "value_column", label: "Value to total", type: "text", default: "Amount", help: "The number column to sum" },
+      { name: "category_column", label: "Group by column", type: "text", source: { from: "columns", input: "data" }, default: "Category", help: "The column to group rows by" },
+      { name: "value_column", label: "Value to total", type: "text", source: { from: "columns", input: "data" }, default: "Amount", help: "The number column to sum" },
     ],
     inputs: [{ alias: "data", columns: ["Category", "Amount"] }],
     samples: [{ alias: "data", filename: "sales.csv", csv: SALES_CSV }],
@@ -79,7 +79,7 @@ def transform(inputs, params):
     icon: "🏆",
     description: "Find the biggest rows by any number column — your top customers, largest orders, best sellers.",
     params: [
-      { name: "value_column", label: "Rank by column", type: "text", default: "Amount", help: "The number column to sort by" },
+      { name: "value_column", label: "Rank by column", type: "text", source: { from: "columns", input: "data" }, default: "Amount", help: "The number column to sort by" },
       { name: "top_n", label: "How many", type: "number", default: 10, min: 1, help: "Number of top rows to keep" },
     ],
     inputs: [{ alias: "data", columns: ["Name", "Amount"] }],
@@ -117,8 +117,8 @@ def transform(inputs, params):
     icon: "📅",
     description: "Roll a dated file up into a total per month — spot trends across the year at a glance.",
     params: [
-      { name: "date_column", label: "Date column", type: "text", default: "Date" },
-      { name: "value_column", label: "Value to total", type: "text", default: "Amount" },
+      { name: "date_column", label: "Date column", type: "text", source: { from: "columns", input: "data" }, default: "Date" },
+      { name: "value_column", label: "Value to total", type: "text", source: { from: "columns", input: "data" }, default: "Amount" },
     ],
     inputs: [{ alias: "data", columns: ["Date", "Amount"] }],
     samples: [{
@@ -157,7 +157,7 @@ def transform(inputs, params):
     category: "Combine",
     icon: "🔗",
     description: "Bring columns from a second file into your main file by a shared ID — a VLOOKUP that never breaks.",
-    params: [{ name: "key_column", label: "Shared column (the key)", type: "text", default: "ID", help: "The column both files have in common" }],
+    params: [{ name: "key_column", label: "Shared column (the key)", type: "text", source: { from: "columns", input: "main" }, default: "ID", help: "The column both files have in common" }],
     inputs: [
       { alias: "main", columns: ["ID", "…"] },
       { alias: "lookup", columns: ["ID", "…"] },
@@ -200,7 +200,7 @@ def transform(inputs, params):
     category: "Clean",
     icon: "🧹",
     description: "Surface rows that repeat a value (same email, same ID) so you can dedupe with confidence.",
-    params: [{ name: "key_column", label: "Column to check", type: "text", default: "ID", help: "Rows sharing this value are duplicates" }],
+    params: [{ name: "key_column", label: "Column to check", type: "text", source: { from: "columns", input: "data" }, default: "ID", help: "Rows sharing this value are duplicates" }],
     inputs: [{ alias: "data", columns: ["ID"] }],
     samples: [{
       alias: "data", filename: "contacts.csv", csv: `ID,Name,Signed up
@@ -226,7 +226,7 @@ def transform(inputs, params):
     category: "Combine",
     icon: "⚖️",
     description: "Reconcile two lists — e.g. invoices not yet paid, or customers missing from a report. Rows in A whose key isn't in B.",
-    params: [{ name: "key_column", label: "Column to match on", type: "text", default: "ID" }],
+    params: [{ name: "key_column", label: "Column to match on", type: "text", source: { from: "columns", input: "list_a" }, default: "ID" }],
     inputs: [
       { alias: "list_a", columns: ["ID"] },
       { alias: "list_b", columns: ["ID"] },

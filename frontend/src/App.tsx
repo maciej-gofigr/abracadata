@@ -34,7 +34,7 @@ import {
   type VersionSummary,
 } from "./lib/api";
 import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
-import { ParamControl, defaultsOf, type ParamValues } from "./components/ParamControl";
+import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./components/ParamControl";
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
@@ -63,6 +63,7 @@ export function App() {
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [allowDataAccess, setAllowDataAccess] = useState(() => localStorage.getItem("allowDataAccess.v1") !== "0");
   const agentAbort = useRef<AbortController | null>(null);
+  const paramRunTimer = useRef<number | undefined>(undefined);
 
   const [library, setLibrary] = useState<RecipeSummary[]>([]);
   const [currentRecipeId, setCurrentRecipeId] = useState<string | null>(null);
@@ -358,7 +359,12 @@ export function App() {
   function setParam(name: string, value: string | number | boolean) {
     const values = { ...paramValues, [name]: value };
     setParamValues(values);
-    if (script) void run(script, values, inputs);
+    // Debounce the re-run so typing in a combobox doesn't fire on every keystroke
+    // (partial values like "R" aren't valid columns).
+    if (script) {
+      if (paramRunTimer.current) clearTimeout(paramRunTimer.current);
+      paramRunTimer.current = window.setTimeout(() => void run(script, values, inputs), 400);
+    }
   }
 
   function toggleDataAccess(on: boolean) {
@@ -677,6 +683,7 @@ export function App() {
 
   const hasInputs = inputs.length > 0;
   const activeInput = inputs[Math.min(activeInputIdx, inputs.length - 1)] ?? null;
+  const paramOptions = useParamOptions(params, inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })));
 
   const library_panel =
     library.length > 0 ? (
@@ -1081,7 +1088,7 @@ export function App() {
                 <div className="card-body">
                   <div className="params-grid">
                     {params.map((p) => (
-                      <ParamControl key={p.name} param={p} value={paramValues[p.name]} onChange={(v) => setParam(p.name, v)} />
+                      <ParamControl key={p.name} param={p} value={paramValues[p.name]} options={paramOptions[p.name]} onChange={(v) => setParam(p.name, v)} />
                     ))}
                   </div>
                 </div>

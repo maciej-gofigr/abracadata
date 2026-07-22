@@ -304,9 +304,10 @@ tbody tr:last-child td { border-bottom: none; }
 .param { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .param-label { font-weight: 500; }
 .param-help { color: var(--faint); font-weight: 400; }
-.param select, .param input[type="text"], .param input[type="date"] {
-  font: inherit; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--ground); color: var(--ink);
+.param select, .param input[type="text"], .param input[type="date"], .param .combobox-input {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--ground); color: var(--ink); width: 100%;
 }
+.param .combobox-input:focus { outline: none; border-color: var(--accent); }
 .num-input { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 10px; background: var(--ground); }
 .num-input span { color: var(--muted); font-family: var(--mono); }
 .num-input input { border: none; padding: 8px 4px; width: 100%; font: inherit; outline: none; background: transparent; color: var(--ink); }
