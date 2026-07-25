@@ -67,6 +67,14 @@ aws ec2 run-instances \
 **DNS:** point `prestidata.app` (A record) at the Elastic IP (Route 53 or your
 registrar). Caddy needs this + port 80 reachable to issue the cert.
 
+> **No domain yet?** Leave `DOMAIN` blank in `.env`. Caddy then serves plain
+> **HTTP on the box's raw IP** (site address falls back to `:80`, no cert), so
+> you can bring the whole stack up and smoke-test at `http://<elastic-ip>/`
+> before DNS exists. Anonymous sessions work over HTTP (the session cookie isn't
+> `Secure`-only). Set `DOMAIN` to your hostname and `docker compose up -d` again
+> when DNS is ready — Caddy provisions the cert on the next request. (Open port
+> 443 in the security group now anyway so you don't have to touch it later.)
+
 ## 3. Bring it up on the box
 
 Shell in with SSM: `aws ssm start-session --target <instance-id>`, then:

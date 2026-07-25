@@ -1,8 +1,10 @@
-# Automatic HTTPS for {$DOMAIN}. Serves the SPA + prerendered SEO pages and
-# reverse-proxies /api/* to the backend container. DOMAIN comes from the compose
-# environment. (Caddy provisions certs with no contact email by default; add a
-# `{ email you@example.com }` global block if you want expiry notifications.)
-{$DOMAIN} {
+# Serves the SPA + prerendered SEO pages and reverse-proxies /api/* to the
+# backend. The site address is DOMAIN from the compose environment; when DOMAIN
+# is unset it falls back to `:80`, so Caddy serves plain HTTP on the box's raw
+# IP with no cert — handy for smoke-testing on EC2 before DNS exists. Set DOMAIN
+# to a real hostname and Caddy auto-provisions HTTPS. (No contact email by
+# default; add a `{ email you@example.com }` global block for expiry notices.)
+{$DOMAIN::80} {
 	encode zstd gzip
 
 	# API — strip the /api prefix (backend routes are /generate, /recipes, …).
