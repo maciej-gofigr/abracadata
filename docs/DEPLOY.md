@@ -33,68 +33,62 @@ Decisions baked in (all one flag to change later):
    **Public** (simplest — the box then pulls with no auth). If you keep them
    private, create a read-only PAT and `docker login ghcr.io` on the box.
 
-## 2. One-time: AWS
+## 2. Provision AWS (Terraform)
 
-**Instance role for Bedrock** (no static keys on the box):
+The `terraform/` dir stands up everything: the instance role (Bedrock + SSM, no
+static keys), a security group (80/443 open, SSH closed by default), an ARM
+EC2 box (Ubuntu 24.04, Docker installed via `deploy/user-data.sh`, IMDSv2 with
+**hop limit 2**), and an Elastic IP. State is local — fine for a POC.
+
 ```sh
-aws iam create-role --role-name prestidata-ec2 \
-  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-aws iam put-role-policy --role-name prestidata-ec2 \
-  --policy-name bedrock-invoke --policy-document file://deploy/bedrock-instance-policy.json
-aws iam create-instance-profile --instance-profile-name prestidata-ec2
-aws iam add-role-to-instance-profile --instance-profile-name prestidata-ec2 --role-name prestidata-ec2
+cd terraform
+cp terraform.tfvars.example terraform.tfvars   # optional — defaults work as-is
+terraform init
+terraform apply
 ```
-Also allow SSM (for keyless shell): attach the managed policy
-`AmazonSSMManagedInstanceCore` to `prestidata-ec2` too.
+Needs AWS creds in your shell (`AWS_PROFILE=… aws sso login`, or env keys) for a
+region where your Bedrock models are enabled (default `us-east-2`). Outputs:
+`public_ip` (for DNS later), `ssm_command`, `app_url_http`, and `bring_up` (the
+exact command for step 3).
 
-**Launch the instance** — `t4g.small` (2 GB, ARM; or `t4g.micro` 1 GB since we
-only *pull* images), Ubuntu 24.04 or AL2023, 20 GB gp3:
-```sh
-aws ec2 run-instances \
-  --image-id <ubuntu-or-al2023-arm64-ami> --instance-type t4g.small \
-  --iam-instance-profile Name=prestidata-ec2 \
-  --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=2" \
-  --user-data file://deploy/user-data.sh \
-  --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":20,"VolumeType":"gp3"}}]' \
-  --security-group-ids <sg-with-80-443-open> \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=prestidata}]'
-```
-- **`HttpPutResponseHopLimit=2` is required** — otherwise containers can't reach
-  the instance-metadata endpoint and Bedrock calls fail with "no credentials".
-- Security group: inbound **80 + 443** from `0.0.0.0/0`. No SSH — use SSM.
-- Allocate an **Elastic IP** and associate it (stable IP for DNS).
+- **Hop limit 2 is baked in** — without it, containers can't reach the metadata
+  endpoint and Bedrock calls fail with "no credentials".
+- **Access is SSM-only by default** (no open port 22). To use SSH instead, set
+  `key_name` + `ssh_ingress_cidr` (your IP only) in `terraform.tfvars`.
 
-**DNS:** point `prestidata.app` (A record) at the Elastic IP (Route 53 or your
-registrar). Caddy needs this + port 80 reachable to issue the cert.
+**DNS (when you have a domain):** point an A record at the `public_ip` output.
+Caddy needs this + port 80 reachable to issue the cert.
 
-> **No domain yet?** Leave `DOMAIN` blank in `.env`. Caddy then serves plain
-> **HTTP on the box's raw IP** (site address falls back to `:80`, no cert), so
-> you can bring the whole stack up and smoke-test at `http://<elastic-ip>/`
-> before DNS exists. Anonymous sessions work over HTTP (the session cookie isn't
-> `Secure`-only). Set `DOMAIN` to your hostname and `docker compose up -d` again
-> when DNS is ready — Caddy provisions the cert on the next request. (Open port
-> 443 in the security group now anyway so you don't have to touch it later.)
+> **No domain yet?** That's the default — `DOMAIN` starts blank, so Caddy serves
+> plain **HTTP on the box's raw IP** (site address falls back to `:80`, no cert).
+> Smoke-test at the `app_url_http` output. Anonymous sessions work over HTTP (the
+> session cookie isn't `Secure`-only). Later, set `DOMAIN` in the box's `.env` and
+> re-run step 3 — Caddy provisions the cert on the next request. (443 is already
+> open, so no infra change needed then.)
 
 ## 3. Bring it up on the box
 
-Shell in with SSM: `aws ssm start-session --target <instance-id>`, then:
+Open a keyless shell with the `ssm_command` output, then run the `bring_up`
+command (also printed by Terraform):
 ```sh
-sudo install -d /opt/prestidata && cd /opt/prestidata
-# copy these two files up (scp via SSM, or curl from your repo once public):
-#   deploy/docker-compose.prod.yml  ->  docker-compose.prod.yml
-#   deploy/.env.example             ->  .env   (then edit)
-sudo nano .env      # set IMAGE_REPO, DOMAIN, ACME_EMAIL, POSTGRES_PASSWORD
-sudo docker compose -f docker-compose.prod.yml up -d
-sudo docker compose -f docker-compose.prod.yml logs -f web   # watch cert issuance
+aws ssm start-session --target <instance-id>          # = ssm_command output
+sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/prestidata/main/deploy/box-setup.sh | bash'
 ```
-Visit `https://prestidata.app`. Verify Bedrock via the app (generate a recipe)
-or: `sudo docker compose -f docker-compose.prod.yml exec backend curl -s localhost:8000/health`.
+`deploy/box-setup.sh` is idempotent: it fetches `docker-compose.prod.yml`, seeds
+`/opt/prestidata/.env` on first run (random DB password, `DOMAIN` blank, correct
+`IMAGE_REPO`), then `docker compose pull && up -d`. Re-run it any time to update
+or after editing `.env`. (If cloud-init hasn't finished installing Docker yet,
+it'll tell you to wait and re-run.)
+
+Visit the `app_url_http` URL. Verify Bedrock by generating a recipe, or:
+`sudo docker compose -f /opt/prestidata/docker-compose.prod.yml exec backend curl -s localhost:8000/health`.
 
 ## 4. Deploying updates
 
-CI pushes new images on merge to `main`. Then on the box:
+CI pushes new images on merge to `main`. Then on the box, just re-run the
+bring-up script (or the lighter `update.sh`):
 ```sh
-sudo bash /opt/prestidata/update.sh    # pull + up -d + prune
+sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/prestidata/main/deploy/box-setup.sh | bash'
 ```
 (Optionally automate later with an SSM `SendCommand` step in CI, or a webhook.)
 

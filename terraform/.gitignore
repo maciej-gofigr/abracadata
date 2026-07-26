@@ -1,0 +1,13 @@
+# Local state can contain secrets — never commit it.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+
+# Your real variables (the .example is committed).
+terraform.tfvars
+*.auto.tfvars
+
+# Keep the provider lock file (.terraform.lock.hcl) committed for reproducible runs.

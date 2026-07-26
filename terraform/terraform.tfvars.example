@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars and adjust. All values have sensible defaults, so an
+# empty file works too. terraform.tfvars is gitignored (never commit it).
+
+# aws_region    = "us-east-2"          # must have your Bedrock models enabled
+# instance_type = "t4g.small"          # or "t4g.micro" (1 GB) — we only pull images
+# root_volume_gb = 20
+
+# --- Access ---
+# Default is SSM-only (keyless, no open SSH port). To use SSH instead, set BOTH:
+# key_name         = "my-keypair"      # an existing EC2 key pair in this region
+# ssh_ingress_cidr = "203.0.113.4/32"  # your IP only — never 0.0.0.0/0
+
+# http_ingress_cidr = "0.0.0.0/0"      # it's a public website
+# subnet_id         = ""               # empty = first subnet of the default VPC
