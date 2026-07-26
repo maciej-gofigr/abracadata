@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Block commits that contain secrets. Scans only the STAGED diff (fast).
+# Enable once per clone:  git config core.hooksPath .githooks
+# Bypass in a pinch:      git commit --no-verify   (use sparingly!)
+#
+# Uses a local `gitleaks` binary if present, else falls back to the official
+# Docker image. Install the binary: https://github.com/gitleaks/gitleaks/releases
+set -euo pipefail
+
+GITLEAKS_ARGS=(git --staged --pre-commit --redact --no-banner --verbose)
+
+if command -v gitleaks >/dev/null 2>&1; then
+	RUN=(gitleaks)
+elif command -v docker >/dev/null 2>&1; then
+	echo "pre-commit: gitleaks not installed, using Docker image…"
+	RUN=(docker run --rm -v "$(git rev-parse --show-toplevel):/repo" -w /repo ghcr.io/gitleaks/gitleaks:latest)
+else
+	echo "pre-commit: neither 'gitleaks' nor 'docker' found — cannot scan for secrets." >&2
+	echo "Install gitleaks (https://github.com/gitleaks/gitleaks) or commit with --no-verify to skip." >&2
+	exit 1
+fi
+
+if ! "${RUN[@]}" "${GITLEAKS_ARGS[@]}"; then
+	cat >&2 <<'EOF'
+
+✖ Secret(s) detected in staged changes — commit blocked.
+  • Remove the secret and stage again, or
+  • If it's a false positive, add a gitleaks allowlist entry in .gitleaks.toml, or
+  • As a last resort:  git commit --no-verify
+EOF
+	exit 1
+fi

@@ -52,6 +52,20 @@ services:
 
 Pyodide (~15 MB) is fetched from jsDelivr on first use.
 
+### Secret scanning (pre-commit)
+
+A [gitleaks](https://github.com/gitleaks/gitleaks) pre-commit hook blocks commits that contain
+secrets. Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+# install the scanner (or the hook falls back to the gitleaks Docker image):
+#   https://github.com/gitleaks/gitleaks/releases   (or `brew install gitleaks`)
+```
+
+The hook scans only the staged diff. To sweep full history (e.g. before making the repo public):
+`gitleaks git`. Rules and allowlists live in `.gitleaks.toml`.
+
 ## Architecture
 
 | Piece | Where |

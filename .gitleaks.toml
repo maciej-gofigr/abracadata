@@ -1,0 +1,20 @@
+# gitleaks config. Runs on every commit via .githooks/pre-commit and can be run
+# manually:  gitleaks git   (history)  /  gitleaks dir .  (working tree)
+title = "prestidata gitleaks"
+
+# Start from gitleaks' built-in rule set (AWS keys, generic API keys, tokens, …).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders in example/config files — not real secrets"
+# Example env files are meant to ship placeholder values (CHANGE_ME, you@…).
+# NOTE: this trusts these paths — never put a real secret in a *.example file.
+paths = [
+  '''\.env\.example$''',
+]
+# Obvious placeholder tokens, wherever they appear.
+regexes = [
+  '''CHANGE_ME''',
+  '''you@example\.com''',
+]
