@@ -1,0 +1,26 @@
+name: gitleaks
+
+# Server-side secret scan — the enforcement layer behind the local pre-commit
+# hook (.githooks/pre-commit). Runs on every push and PR, so a secret committed
+# with --no-verify (or by someone who never enabled the hook) is still caught.
+# Uses the repo's .gitleaks.toml. Free for personal/public repos (no license key).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history, so a leak in any commit is caught
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
