@@ -366,6 +366,29 @@ tbody tr:last-child td { border-bottom: none; }
 /* save bar + code disclosure */
 .save-bar { display: flex; align-items: center; gap: 12px; margin: 4px 0 18px; flex-wrap: wrap; }
 .save-bar .saved-msg { color: var(--add); font-size: 13px; }
+
+/* two-column authoring: builder (data + chat) | the recipe "app" (steps/knobs/output) */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-bottom: 18px; }
+@media (max-width: 900px) { .workspace { grid-template-columns: 1fr; gap: 16px; } }
+.workspace-builder { min-width: 0; }
+.workspace-builder > :last-child { margin-bottom: 0; }
+
+/* the result reads as a distinct little app: a recessed, framed surface whose
+   white cards (recipe, knobs, output) sit on it like a small dashboard */
+.workspace-app {
+  min-width: 0; background: var(--surface-2); border: 1px solid var(--line-strong);
+  border-radius: 14px; padding: 14px;
+}
+.workspace-app > :last-child { margin-bottom: 0; }
+.app-head { padding: 2px 4px 12px; }
+.app-head-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+
+/* empty state so the app surface reads as an app from the get-go */
+.app-empty { display: grid; place-items: center; min-height: 300px; text-align: center; padding: 24px; }
+.app-empty-inner { max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.app-empty-icon { font-size: 30px; color: var(--faint); opacity: 0.55; }
+.app-empty-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.app-empty .muted { font-size: 13px; line-height: 1.5; margin: 0; }
 /* recipe panel: step-flow / Python as tabs of one card */
 .recipe-panel { margin-bottom: 18px; }
 .recipe-panel-head { padding: 9px 12px; }

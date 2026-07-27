@@ -944,6 +944,8 @@ export function App() {
             {loadingMsg && <div className="status"><span className="spinner" aria-hidden="true" />{loadingMsg}</div>}
             {fileError && <div className="error">{fileError}</div>}
 
+            <div className="workspace">
+            <div className="workspace-builder">
             <section className="section">
               <div className="header-row" style={{ marginBottom: 10 }}>
                 <h2 className="page-title" style={{ fontSize: 15 }}>
@@ -1121,75 +1123,88 @@ export function App() {
                 </label>
               </div>
             </section>
+            </div>{/* /workspace-builder */}
 
-            {script && (
-              <RecipePanel
-                inputs={inputs.map((i) => i.alias)}
-                steps={steps}
-                tables={(output?.tables ?? []).map((t) => prettify(t.name))}
-                plots={(output?.plots ?? []).map((p) => p.name)}
-                script={script}
-                onScriptChange={setScript}
-                onDownload={downloadRecipeFile}
-              />
-            )}
+            <div className="workspace-app">
+              <div className="app-head"><span className="app-head-label">Result</span></div>
+              {script ? (
+                <>
+                  <RecipePanel
+                    inputs={inputs.map((i) => i.alias)}
+                    steps={steps}
+                    tables={(output?.tables ?? []).map((t) => prettify(t.name))}
+                    plots={(output?.plots ?? []).map((p) => p.name)}
+                    script={script}
+                    onScriptChange={setScript}
+                    onDownload={downloadRecipeFile}
+                  />
 
-            {params.length > 0 && (
-              <section className="card section">
-                <div className="card-header">
-                  <h2>Adjustable settings</h2>
-                  <span className="count">edits re-run instantly, in your browser</span>
-                </div>
-                <div className="card-body">
-                  <div className="params-grid">
-                    {params.map((p) => (
-                      <ParamControl key={p.name} param={p} value={paramValues[p.name]} options={paramOptions[p.name]} onChange={(v) => setParam(p.name, v)} />
-                    ))}
-                  </div>
-                </div>
-              </section>
-            )}
+                  {params.length > 0 && (
+                    <section className="card section">
+                      <div className="card-header">
+                        <h2>Adjustable settings</h2>
+                        <span className="count">edits re-run instantly, in your browser</span>
+                      </div>
+                      <div className="card-body">
+                        <div className="params-grid">
+                          {params.map((p) => (
+                            <ParamControl key={p.name} param={p} value={paramValues[p.name]} options={paramOptions[p.name]} onChange={(v) => setParam(p.name, v)} />
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+                  )}
 
-            {running && <div className="status"><span className="spinner" aria-hidden="true" />Running…</div>}
-            {runError && (
-              <div className="run-error">
-                <div className="run-error-title">This recipe couldn't run on your files.</div>
-                <p style={{ margin: "0 0 8px" }}>{friendlyRunError(runError)}</p>
-                <details>
-                  <summary>Technical details</summary>
-                  <pre>{runError}</pre>
-                </details>
-              </div>
-            )}
-
-            {output && (
-              <section className="output section">
-                {output.tables.map((t) => (
-                  <div className="card" key={t.name}>
-                    <div className="card-header">
-                      <h2>{prettify(t.name)}</h2>
-                      <span className="count">{t.preview.rowCount.toLocaleString()} rows · {t.preview.columns.length} cols</span>
-                      <button className="btn ghost" disabled={exportingTable === t.name} onClick={() => downloadTable(t.name)}>
-                        {exportingTable === t.name ? <><span className="spinner" aria-hidden="true" />Preparing…</> : "Download CSV"}
-                      </button>
+                  {running && <div className="status"><span className="spinner" aria-hidden="true" />Running…</div>}
+                  {runError && (
+                    <div className="run-error">
+                      <div className="run-error-title">This recipe couldn't run on your files.</div>
+                      <p style={{ margin: "0 0 8px" }}>{friendlyRunError(runError)}</p>
+                      <details>
+                        <summary>Technical details</summary>
+                        <pre>{runError}</pre>
+                      </details>
                     </div>
-                    <DataTable preview={t.preview} />
-                  </div>
-                ))}
-                {output.plots.map((p) => (
-                  <PlotView key={p.name} spec={p} />
-                ))}
-              </section>
-            )}
+                  )}
 
-            {script && (
-              <div className="save-bar">
-                <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
-                  {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : currentRecipeId ? "Save new version" : "Save to library"}
-                </button>
-                {libMsg && <span className="saved-msg">{libMsg}</span>}
-              </div>
-            )}
+                  {output && (
+                    <section className="output section">
+                      {output.tables.map((t) => (
+                        <div className="card" key={t.name}>
+                          <div className="card-header">
+                            <h2>{prettify(t.name)}</h2>
+                            <span className="count">{t.preview.rowCount.toLocaleString()} rows · {t.preview.columns.length} cols</span>
+                            <button className="btn ghost" disabled={exportingTable === t.name} onClick={() => downloadTable(t.name)}>
+                              {exportingTable === t.name ? <><span className="spinner" aria-hidden="true" />Preparing…</> : "Download CSV"}
+                            </button>
+                          </div>
+                          <DataTable preview={t.preview} />
+                        </div>
+                      ))}
+                      {output.plots.map((p) => (
+                        <PlotView key={p.name} spec={p} />
+                      ))}
+                    </section>
+                  )}
+
+                  <div className="save-bar">
+                    <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
+                      {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : currentRecipeId ? "Save new version" : "Save to library"}
+                    </button>
+                    {libMsg && <span className="saved-msg">{libMsg}</span>}
+                  </div>
+                </>
+              ) : (
+                <div className="app-empty">
+                  <div className="app-empty-inner">
+                    <div className="app-empty-icon" aria-hidden="true">▤</div>
+                    <div className="app-empty-title">Your result shows up here</div>
+                    <p className="muted">Describe what you need on the left — or pick a suggestion — and the recipe, its controls, and the output appear here as a little app.</p>
+                  </div>
+                </div>
+              )}
+            </div>{/* /workspace-app */}
+            </div>{/* /workspace */}
 
             {library_panel}
           </>
