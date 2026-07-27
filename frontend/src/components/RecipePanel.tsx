@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RecipeStep } from "../types";
 import { RecipeFlow } from "./RecipeFlow";
+import { CodeEditor } from "./CodeEditor";
 
 type Tab = "steps" | "python";
 
@@ -68,7 +69,7 @@ export function RecipePanel({
         </div>
       ) : (
         <div className="code">
-          <textarea value={script} spellCheck={false} onChange={(e) => onScriptChange(e.target.value)} />
+          <CodeEditor value={script} onChange={onScriptChange} />
         </div>
       )}
     </section>
