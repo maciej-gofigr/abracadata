@@ -39,7 +39,7 @@ import { chatEntries } from "./lib/chat";
 import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./components/ParamControl";
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
-import { RecipeFlow } from "./components/RecipeFlow";
+import { RecipePanel } from "./components/RecipePanel";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
 import type { InputFile, RecipeMeta, RecipeParam, RecipeStep, RunResult } from "./types";
 
@@ -79,7 +79,6 @@ export function App() {
   const [currentRecipeName, setCurrentRecipeName] = useState("");
   const [versions, setVersions] = useState<VersionSummary[]>([]);
   const [libMsg, setLibMsg] = useState<string | null>(null);
-  const [showCode, setShowCode] = useState(false);
   const [aliasDraft, setAliasDraft] = useState<Record<string, string>>({});
   const [activeInputIdx, setActiveInputIdx] = useState(0);
   const [expectedInputs, setExpectedInputs] = useState<{ alias: string; columns: string[] }[]>([]);
@@ -677,7 +676,6 @@ export function App() {
     setCurrentRecipeId(null);
     setCurrentRecipeName("");
     setVersions([]);
-    setShowCode(false);
     setExpectedInputs([]);
     setActiveInputIdx(0);
     setLibMsg(null);
@@ -1124,21 +1122,16 @@ export function App() {
               </div>
             </section>
 
-            {script && steps.length > 0 && (
-              <section className="card section">
-                <div className="card-header">
-                  <h2>How this recipe works</h2>
-                  <span className="count">plain-language summary — no code needed</span>
-                </div>
-                <div className="card-body">
-                  <RecipeFlow
-                    inputs={inputs.map((i) => i.alias)}
-                    steps={steps}
-                    tables={(output?.tables ?? []).map((t) => prettify(t.name))}
-                    plots={(output?.plots ?? []).map((p) => p.name)}
-                  />
-                </div>
-              </section>
+            {script && (
+              <RecipePanel
+                inputs={inputs.map((i) => i.alias)}
+                steps={steps}
+                tables={(output?.tables ?? []).map((t) => prettify(t.name))}
+                plots={(output?.plots ?? []).map((p) => p.name)}
+                script={script}
+                onScriptChange={setScript}
+                onDownload={downloadRecipeFile}
+              />
             )}
 
             {params.length > 0 && (
@@ -1190,30 +1183,12 @@ export function App() {
             )}
 
             {script && (
-              <>
-                <div className="save-bar">
-                  <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
-                    {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : currentRecipeId ? "Save new version" : "Save to library"}
-                  </button>
-                  {libMsg && <span className="saved-msg">{libMsg}</span>}
-                </div>
-
-                <div className="card section disclosure">
-                  <div className="disclosure-head">
-                    <button className={`disclose-btn ${showCode ? "open" : ""}`} onClick={() => setShowCode(!showCode)} aria-expanded={showCode}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      {showCode ? "Hide the steps (Python)" : "Show the steps (Python)"}
-                    </button>
-                    <div className="spacer" />
-                    <button className="btn ghost" onClick={downloadRecipeFile}>Download recipe (.py)</button>
-                  </div>
-                  {showCode && (
-                    <div className="code">
-                      <textarea value={script} spellCheck={false} onChange={(e) => setScript(e.target.value)} />
-                    </div>
-                  )}
-                </div>
-              </>
+              <div className="save-bar">
+                <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
+                  {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : currentRecipeId ? "Save new version" : "Save to library"}
+                </button>
+                {libMsg && <span className="saved-msg">{libMsg}</span>}
+              </div>
             )}
 
             {library_panel}
