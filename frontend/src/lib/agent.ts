@@ -6,7 +6,7 @@
 // clarifying questions, and bounding the whole thing. See docs/agent-harness-design.md.
 
 import { pyWorker } from "./pyodide";
-import type { RecipeParam } from "../types";
+import type { RecipeParam, RecipeStep } from "../types";
 
 export interface AgentInputSchema {
   alias: string;
@@ -45,7 +45,7 @@ export interface AgentCallbacks {
   onText?: (delta: string) => void;
   onActivity?: (activities: AgentActivity[]) => void;
   onQuestion?: (question: string, askId: string | null) => void;
-  onFinal?: (result: { script: string; params: RecipeParam[]; explanation: string }) => void;
+  onFinal?: (result: { script: string; params: RecipeParam[]; steps: RecipeStep[]; explanation: string }) => void;
   onError?: (message: string) => void;
 }
 
@@ -57,7 +57,7 @@ export interface AgentOptions {
 
 type Terminal =
   | { type: "tool_use"; assistant: AgentTurn; calls: AgentToolCall[] }
-  | { type: "final"; assistant: AgentTurn; submit_id: string | null; script: string; params: RecipeParam[]; explanation: string }
+  | { type: "final"; assistant: AgentTurn; submit_id: string | null; script: string; params: RecipeParam[]; steps: RecipeStep[]; explanation: string }
   | { type: "question"; assistant: AgentTurn; ask_id: string; question: string }
   | { type: "message"; assistant: AgentTurn; text: string }
   | { type: "error"; error: string };
@@ -113,7 +113,7 @@ export async function runAgent(
       // ends on a user turn — would break the next revision. A clean assistant
       // text turn keeps the transcript valid for follow-ups.
       transcript.push({ role: "assistant", text: turn.explanation || turn.assistant.text || "Recipe ready." });
-      cb.onFinal?.({ script: turn.script, params: turn.params, explanation: turn.explanation });
+      cb.onFinal?.({ script: turn.script, params: turn.params, steps: turn.steps ?? [], explanation: turn.explanation });
       return;
     }
 

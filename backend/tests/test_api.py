@@ -65,6 +65,11 @@ def test_generate_final_via_submit_recipe(monkeypatch):
                 "explanation": "Returns the orders unchanged.",
                 "script": SCRIPT,
                 "params": [{"name": "n", "type": "number", "default": 5}],
+                "steps": [
+                    {"title": "Return the orders as-is"},
+                    {"title": "", "detail": "dropped: no title"},
+                    "Bare string step is coerced",
+                ],
             }}}],
             "tool_use",
         )
@@ -81,6 +86,11 @@ def test_generate_final_via_submit_recipe(monkeypatch):
     assert final["explanation"] == "Returns the orders unchanged."
     assert final["params"][0]["name"] == "n"
     assert final["submit_id"] == "s1"
+    # steps are sanitized: titleless entries dropped, bare strings coerced.
+    assert [s["title"] for s in final["steps"]] == [
+        "Return the orders as-is",
+        "Bare string step is coerced",
+    ]
 
 
 def test_generate_ask_user(monkeypatch):

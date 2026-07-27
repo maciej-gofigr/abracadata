@@ -12,6 +12,7 @@ import {
   SAMPLE_ORDERS_CSV,
   SAMPLE_PARAMS,
   SAMPLE_SCRIPT,
+  SAMPLE_STEPS,
 } from "./lib/fixtures";
 import {
   addVersion,
@@ -34,11 +35,13 @@ import {
   type VersionSummary,
 } from "./lib/api";
 import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
+import { chatEntries } from "./lib/chat";
 import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./components/ParamControl";
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
+import { RecipeFlow } from "./components/RecipeFlow";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
-import type { InputFile, RecipeMeta, RecipeParam, RunResult } from "./types";
+import type { InputFile, RecipeMeta, RecipeParam, RecipeStep, RunResult } from "./types";
 
 // Passwordless sign-in needs an email sender (SES). Until that's wired, the prod
 // build sets VITE_AUTH_ENABLED=false so the app is cleanly anonymous-only.
@@ -48,6 +51,8 @@ export function App() {
   const [inputs, setInputs] = useState<InputFile[]>([]);
   const [script, setScript] = useState<string | null>(null);
   const [params, setParams] = useState<RecipeParam[]>([]);
+  const [steps, setSteps] = useState<RecipeStep[]>([]);
+  const chatLogRef = useRef<HTMLDivElement>(null);
   const [paramValues, setParamValues] = useState<ParamValues>({});
   const [output, setOutput] = useState<RunResult | null>(null);
   const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
@@ -105,6 +110,12 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep the newest chat message in view as the conversation grows / streams.
+  useEffect(() => {
+    const el = chatLogRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [transcript, assistantText, activities, generating]);
 
   // Set view state from the current URL path (deep links, back/forward).
   function applyRoute(path: string) {
@@ -244,6 +255,7 @@ export function App() {
     setScript(parsed.script);
     const ps = parsed.meta?.params ?? [];
     setParams(ps);
+    setSteps(parsed.meta?.steps ?? []);
     const values = defaultsOf(ps);
     setParamValues(values);
     if (inputs.length) void run(parsed.script, values, inputs);
@@ -268,6 +280,7 @@ export function App() {
       setActiveInputIdx(0);
       setScript(SAMPLE_SCRIPT);
       setParams(SAMPLE_PARAMS);
+      setSteps(SAMPLE_STEPS);
       const values = defaultsOf(SAMPLE_PARAMS);
       setParamValues(values);
       resetConversation();
@@ -293,7 +306,10 @@ export function App() {
 
   // Run the agent loop over the given transcript (mutated in place across turns).
   async function driveAgent(t: AgentTurn[]) {
-    setTranscript(t);
+    // Fresh ref so a just-appended user turn renders immediately (answerQuestion
+    // mutates the existing array). The loop keeps mutating `t`; we re-publish at
+    // the end. `t` and the state array stay value-equal throughout.
+    setTranscript([...t]);
     setGenerating(true);
     setAssistantText("");
     setActivities([]);
@@ -317,14 +333,16 @@ export function App() {
           setAnswerText("");
           setGenerating(false);
         },
-        onFinal: ({ script: src, params: ps, explanation }) => {
+        onFinal: ({ script: src, params: ps, steps: st }) => {
+          // The explanation isn't set here — agent.ts records it as an assistant
+          // turn, so it renders as a chat bubble like every other reply.
           setGenerating(false);
           setActivities([]);
           setScript(src);
           setParams(ps);
+          setSteps(st);
           const values = defaultsOf(ps);
           setParamValues(values);
-          setAssistantText(explanation);
           void run(src, values, inputs);
         },
         onError: (msg) => {
@@ -333,6 +351,10 @@ export function App() {
         },
       },
     );
+    // The loop mutates `t` in place (no re-render); publish the finished turns so
+    // the chat log shows the full history, and drop the live streaming bubble.
+    setTranscript([...t]);
+    setAssistantText("");
   }
 
   async function generate() {
@@ -421,6 +443,8 @@ export function App() {
       param_values: paramValues,
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
       prompt: userPrompts().slice(-1)[0],
+      // NOTE: `steps` aren't persisted yet (no column server-side) — they live in
+      // the downloaded .py metadata and the live authoring session only.
     };
     setSaving(true);
     try {
@@ -643,6 +667,7 @@ export function App() {
     setInputs([]);
     setScript(null);
     setParams([]);
+    setSteps([]);
     setParamValues({});
     setOutput(null);
     setRunError(null);
@@ -681,6 +706,7 @@ export function App() {
       // Bake the current knob values in as defaults so the standalone CLI
       // remembers the user's tweaks too.
       params: params.map((p) => (p.name in paramValues ? { ...p, default: paramValues[p.name] } : p)),
+      steps,
     };
     downloadBlob(`${(meta.name || "recipe").replace(/\s+/g, "_")}.py`, buildRecipe(script, meta), "text/x-python");
   }
@@ -982,25 +1008,40 @@ export function App() {
                 <span className="count">plain English — the AI writes the recipe</span>
               </div>
               <div className="card-body">
-                {generating && activities.length > 0 && (
-                  <ul className="agent-activity">
-                    {activities.map((a, i) => (
-                      <li key={i} className={`act-${a.status}`}>
-                        {a.status === "running" ? (
-                          <span className="spinner act-spin" aria-hidden="true" />
-                        ) : (
-                          <span className="act-icon" aria-hidden="true">{a.status === "ok" ? "✓" : "!"}</span>
-                        )}
-                        {a.detail}
-                      </li>
+                {(transcript.length > 0 || generating) && (
+                  <div className="chat-log" ref={chatLogRef}>
+                    {chatEntries(transcript).map((m, i) => (
+                      <div key={i} className={`chat-msg chat-${m.who}`}>
+                        <div className="chat-bubble">{m.text}</div>
+                      </div>
                     ))}
-                  </ul>
-                )}
 
-                {(assistantText || (generating && activities.length === 0)) && (
-                  <div className={`assistant-reply ${generating ? "thinking" : ""}`}>
-                    {generating && <span className="spinner" aria-hidden="true" />}
-                    <span>{assistantText || "Thinking…"}</span>
+                    {generating && (
+                      <div className="chat-msg chat-assistant">
+                        <div className="chat-bubble chat-live">
+                          {activities.length > 0 && (
+                            <ul className="agent-activity">
+                              {activities.map((a, i) => (
+                                <li key={i} className={`act-${a.status}`}>
+                                  {a.status === "running" ? (
+                                    <span className="spinner act-spin" aria-hidden="true" />
+                                  ) : (
+                                    <span className="act-icon" aria-hidden="true">{a.status === "ok" ? "✓" : "!"}</span>
+                                  )}
+                                  {a.detail}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {(assistantText || activities.length === 0) && (
+                            <div className="assistant-reply thinking">
+                              <span className="spinner" aria-hidden="true" />
+                              <span>{assistantText || "Thinking…"}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1019,12 +1060,11 @@ export function App() {
 
                 {pendingQuestion ? (
                   <div className="clarify">
-                    <div className="clarify-q"><span className="clarify-tag">Quick question</span>{pendingQuestion.question}</div>
                     <div className="describe-input">
                       <textarea
                         value={answerText}
                         autoFocus
-                        placeholder="Your answer…"
+                        placeholder="Type your answer…"
                         rows={2}
                         onChange={(e) => setAnswerText(e.target.value)}
                         onKeyDown={(e) => {
@@ -1083,6 +1123,23 @@ export function App() {
                 </label>
               </div>
             </section>
+
+            {script && steps.length > 0 && (
+              <section className="card section">
+                <div className="card-header">
+                  <h2>How this recipe works</h2>
+                  <span className="count">plain-language summary — no code needed</span>
+                </div>
+                <div className="card-body">
+                  <RecipeFlow
+                    inputs={inputs.map((i) => i.alias)}
+                    steps={steps}
+                    tables={(output?.tables ?? []).map((t) => prettify(t.name))}
+                    plots={(output?.plots ?? []).map((p) => p.name)}
+                  />
+                </div>
+              </section>
+            )}
 
             {params.length > 0 && (
               <section className="card section">

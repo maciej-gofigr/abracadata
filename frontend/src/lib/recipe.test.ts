@@ -21,6 +21,10 @@ const meta: RecipeMeta = {
       options: ["Region", "Segment"],
     },
   ],
+  steps: [
+    { title: "Combine orders with customer details" },
+    { title: "Total revenue per region", detail: "Grouped by the chosen column" },
+  ],
 };
 
 const script = `import pandas as pd
@@ -35,6 +39,11 @@ describe("recipe build/parse", () => {
     expect(parsed!.meta?.name).toBe("revenue by region");
     expect(parsed!.meta?.inputs.map((i) => i.alias)).toEqual(["orders", "customers"]);
     expect(parsed!.meta?.params.map((p) => p.name)).toEqual(["min_amount", "group_by"]);
+    expect(parsed!.meta?.steps?.map((s) => s.title)).toEqual([
+      "Combine orders with customer details",
+      "Total revenue per region",
+    ]);
+    expect(parsed!.meta?.steps?.[1].detail).toBe("Grouped by the chosen column");
     expect(parsed!.script).toContain("def transform(inputs, params)");
   });
 

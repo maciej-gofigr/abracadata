@@ -275,6 +275,53 @@ tbody tr:last-child td { border-bottom: none; }
 .agent-activity .act-error .act-icon { background: var(--remove-tint); color: var(--remove); }
 @keyframes act-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+/* chat history log (full conversation across turns) */
+.chat-log {
+  display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px;
+  max-height: 400px; overflow-y: auto; padding-right: 2px;
+}
+.chat-msg { display: flex; }
+.chat-msg.chat-user { justify-content: flex-end; }
+.chat-msg.chat-assistant { justify-content: flex-start; }
+.chat-bubble {
+  max-width: 86%; padding: 9px 13px; border-radius: 14px; font-size: 14px;
+  line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+.chat-user .chat-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.chat-assistant .chat-bubble { background: var(--surface-2); color: var(--ink); border-bottom-left-radius: 4px; }
+/* the live in-progress turn hosts the activity trace + streaming text as-is */
+.chat-bubble.chat-live { background: transparent; padding: 0; max-width: 100%; }
+.chat-bubble.chat-live .agent-activity { margin-bottom: 8px; }
+.chat-bubble.chat-live .assistant-reply.thinking { margin-bottom: 0; }
+
+/* "How this recipe works" — layperson step-flow diagram */
+.recipe-flow { display: flex; flex-direction: column; align-items: center; }
+.flow-endcaps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.flow-chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px;
+  border-radius: 9px; font-size: 13px; font-weight: 550; border: 1px solid var(--line-strong);
+  background: var(--surface-2); color: var(--ink);
+}
+.flow-chip.flow-in { border-color: color-mix(in srgb, var(--accent) 32%, transparent); background: var(--accent-tint); color: var(--accent); }
+.flow-chip.flow-out { border-color: color-mix(in srgb, var(--add) 36%, transparent); background: var(--add-tint); color: var(--add); }
+.flow-ico { font-size: 12px; opacity: 0.9; }
+.flow-arrow { width: 2px; height: 18px; background: var(--line-strong); position: relative; margin: 7px 0; }
+.flow-arrow::after {
+  content: ""; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid var(--line-strong);
+}
+.flow-steps { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 470px; display: flex; flex-direction: column; gap: 8px; }
+.flow-step {
+  display: flex; align-items: flex-start; gap: 11px; padding: 11px 13px;
+  background: var(--ground); border: 1px solid var(--line); border-radius: 10px;
+}
+.flow-num {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+  font-size: 12px; font-weight: 700; display: grid; place-items: center; margin-top: 1px;
+}
+.flow-step-title { font-size: 14px; font-weight: 550; color: var(--ink); }
+.flow-step-detail { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
 /* loading spinner (generation, running, file load) */
 .spinner {
   display: inline-block; width: 14px; height: 14px; flex: none; box-sizing: border-box;

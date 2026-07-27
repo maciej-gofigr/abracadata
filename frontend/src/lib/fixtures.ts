@@ -1,4 +1,4 @@
-import type { RecipeParam } from "../types";
+import type { RecipeParam, RecipeStep } from "../types";
 
 // A two-file sample so the v2 runtime can be exercised end-to-end without an
 // LLM: join orders → customers, filter by a param, summarize + chart.
@@ -90,6 +90,13 @@ export const SAMPLE_PARAMS: RecipeParam[] = [
     options: ["Region", "Segment"],
     help: "One row per group",
   },
+];
+
+export const SAMPLE_STEPS: RecipeStep[] = [
+  { title: "Combine orders with customer details" },
+  { title: "Keep orders at or above the minimum amount" },
+  { title: "Total revenue and order count per group", detail: "Grouped by region or segment" },
+  { title: "Chart revenue by group as a bar chart" },
 ];
 
 export const SAMPLE_INPUT_ALIASES = ["orders", "customers"] as const;

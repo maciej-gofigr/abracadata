@@ -104,7 +104,7 @@ TOOLS
 - column_profile(alias, column): for a text column, unique count + most common values; for a numeric column, min/max/mean + null count. Use to learn exact category labels to group/filter by, to check join keys match across files, and to spot values needing cleanup. (Only when data access is allowed.)
 - run_recipe(script, params?): RUN your candidate transform on the real data. Returns output table shapes (and a small sample of rows, if data access is allowed) OR the Python error traceback. ALWAYS run_recipe and see it succeed before submitting. If it errors, read the traceback, fix the script, and run again.
 - ask_user(question): ask ONE short clarifying question — ONLY when the request is genuinely ambiguous and no reasonable default exists. Strongly prefer making a sensible assumption and letting the user revise later.
-- submit_recipe(explanation, script, params): finish. Call ONLY after run_recipe succeeded on the current script.
+- submit_recipe(explanation, script, params, steps): finish. Call ONLY after run_recipe succeeded on the current script.
 
 THE RECIPE (the `script` you write and submit)
 - Define exactly: def transform(inputs: dict, params: dict) -> dict
@@ -128,7 +128,12 @@ ADJUSTABLE SETTINGS (the `params` you submit)
     "source": {"from": "values", "input": "<alias>", "column": "<Column>"}   — the value is one of the DISTINCT VALUES in that column.
   Use "source" for a group-by column, a key/join column, or a category/status/region to filter by — it adapts to whatever file the user drops. In the script read it via params.get and resolve columns case-insensitively (and tolerate a value not present). Reserve static "options" for a truly fixed set.
 
-Keep explanations plain and short (1-3 sentences, no jargon). When revising after user feedback, produce the full updated script and re-test it."""
+STEPS (the `steps` you submit)
+- Also provide `steps`: an ordered list of the transform's stages, distilled for a non-technical reader who will NOT see the Python. This drives a visual flow diagram in the UI, so make each step a discrete stage of the pipeline.
+- 2-6 steps. Each is {"title": a short imperative phrase in plain English (e.g. "Match each order to its customer", "Keep only 2024 orders", "Total revenue per segment"), "detail": OPTIONAL one short line if a title needs clarifying}.
+- Describe WHAT happens to the data in business terms, not pandas operations — say "Combine the two files by customer", never "merge on Customer ID". No column-name jargon, code, or library names. Cover the meaningful stages in order (combine → clean/filter → aggregate → chart), not every line.
+
+Keep explanations plain and short (1-3 sentences, no jargon). When revising after user feedback, produce the full updated script, re-test it, and provide updated steps."""
 
 
 # --------------------------------------------------------------------------- #
@@ -181,6 +186,18 @@ _SUBMIT_RECIPE = _tool(
         "explanation": {"type": "string", "description": "1-3 plain-language sentences describing what the recipe does."},
         "script": {"type": "string"},
         "params": {"type": "array", "items": {"type": "object"}, "description": "Adjustable-knob specs (see system prompt)."},
+        "steps": {
+            "type": "array",
+            "description": "Ordered plain-language steps the recipe performs, for a non-technical reader (see system prompt).",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Short imperative step, e.g. 'Total revenue per segment'."},
+                    "detail": {"type": "string", "description": "Optional one-line clarification."},
+                },
+                "required": ["title"],
+            },
+        },
     },
     ["explanation", "script"],
 )
@@ -348,6 +365,31 @@ def _sanitize_params(data: Any) -> list[dict[str, Any]]:
             if item.get(key) is not None:
                 knob[key] = item[key]
         out.append(knob)
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _sanitize_steps(data: Any) -> list[dict[str, str]]:
+    """Validate the model's `steps` into a list of {title, detail?} (title required)."""
+    if not isinstance(data, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in data:
+        title = ""
+        detail = ""
+        if isinstance(item, dict):
+            title = item.get("title") if isinstance(item.get("title"), str) else ""
+            detail = item.get("detail") if isinstance(item.get("detail"), str) else ""
+        elif isinstance(item, str):
+            title = item
+        title = (title or "").strip()
+        if not title:
+            continue
+        step = {"title": title}
+        if detail and detail.strip():
+            step["detail"] = detail.strip()
+        out.append(step)
         if len(out) >= 8:
             break
     return out
@@ -528,6 +570,12 @@ def generate(req: GenerateRequest) -> StreamingResponse:
                 "submit_id": "mock",
                 "script": _MOCK_RECIPE,
                 "params": _MOCK_PARAMS,
+                "steps": [
+                    {"title": "Combine orders with customer details"},
+                    {"title": "Keep orders at or above the minimum amount"},
+                    {"title": "Total revenue and order count per segment"},
+                    {"title": "Chart each segment's share of revenue"},
+                ],
                 "explanation": "Joins orders to customers and shows revenue share by segment as a pie chart.",
             })
         return StreamingResponse(mock(), media_type="text/event-stream")
@@ -563,6 +611,7 @@ def generate(req: GenerateRequest) -> StreamingResponse:
                 "submit_id": tool_uses["submit_recipe"]["id"],
                 "script": inp.get("script") or "",
                 "params": _sanitize_params(inp.get("params") or []),
+                "steps": _sanitize_steps(inp.get("steps") or []),
                 "explanation": inp.get("explanation") or (assistant["text"] or "").strip(),
             })
             return
@@ -591,6 +640,7 @@ def generate(req: GenerateRequest) -> StreamingResponse:
                 "submit_id": None,
                 "script": script,
                 "params": extract_params(full),
+                "steps": [],
                 "explanation": _strip_code(full),
             })
         else:

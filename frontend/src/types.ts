@@ -70,6 +70,12 @@ export interface ChatMessage {
   text: string;
 }
 
+/** One plain-language stage of a recipe, for the layperson "how it works" flow. */
+export interface RecipeStep {
+  title: string;
+  detail?: string;
+}
+
 export interface Settings {
   apiKey: string;
   model: string;
@@ -84,6 +90,7 @@ export interface RecipeMeta {
   prompts: string[];
   inputs: { alias: string; columns: string[] }[];
   params: RecipeParam[];
+  steps?: RecipeStep[];
 }
 
 /** Legacy — kept for the (currently unused) DiffSummary component. */
