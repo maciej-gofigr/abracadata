@@ -370,19 +370,30 @@ tbody tr:last-child td { border-bottom: none; }
 /* two-column authoring: builder (data + chat) | the recipe "app" (steps/knobs/output) */
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; margin-bottom: 18px; }
 @media (max-width: 900px) { .workspace { grid-template-columns: 1fr; gap: 16px; } }
-.workspace-builder { min-width: 0; }
+.workspace-builder, .workspace-appcol { min-width: 0; }
 .workspace-builder > :last-child { margin-bottom: 0; }
+.app-head-save { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
 /* the result reads as a distinct little app: a recessed, framed surface whose
    white cards (recipe, knobs, output) sit on it like a small dashboard */
 .workspace-app {
   min-width: 0; background: var(--surface-2); border: 1px solid var(--line-strong);
-  border-radius: 14px; padding: 14px;
+  border-radius: 14px; padding: 14px; display: flex; flex-direction: column;
 }
 .workspace-app > :last-child { margin-bottom: 0; }
-.app-head { display: flex; align-items: center; gap: 10px; padding: 2px 4px 12px; }
-.app-head-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
-.app-head-save { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+/* desktop: a fixed-height app shell — two equal-height panes that scroll
+   internally, so the chat/output never grow the page on each turn */
+@media (min-width: 901px) {
+  .workspace { align-items: stretch; height: clamp(480px, 74vh, 860px); }
+  .workspace-builder, .workspace-appcol { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+  .workspace-builder > .section:first-child { flex: 0 0 auto; }
+  .workspace-builder .table-wrap { max-height: 200px; }
+  .workspace-builder > .describe { flex: 1 1 auto; min-height: 0; margin-bottom: 0; display: flex; flex-direction: column; }
+  .workspace-builder > .describe > .card-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .workspace-builder .chat-log { flex: 1 1 auto; min-height: 90px; max-height: none; }
+  .workspace-app { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+}
 
 /* floating "not saved yet" nudge for a freshly generated recipe */
 .save-banner {
@@ -400,7 +411,7 @@ tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 520px) { .save-banner { left: 12px; right: 12px; transform: none; flex-wrap: wrap; justify-content: flex-end; } }
 
 /* empty state so the app surface reads as an app from the get-go */
-.app-empty { display: grid; place-items: center; min-height: 300px; text-align: center; padding: 24px; }
+.app-empty { flex: 1 1 auto; display: grid; place-items: center; min-height: 300px; text-align: center; padding: 24px; }
 .app-empty-inner { max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .app-empty-icon { font-size: 30px; color: var(--faint); opacity: 0.55; }
 .app-empty-title { font-size: 15px; font-weight: 600; color: var(--ink); }

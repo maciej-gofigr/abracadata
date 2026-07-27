@@ -1125,9 +1125,9 @@ export function App() {
             </section>
             </div>{/* /workspace-builder */}
 
-            <div className="workspace-app">
-              <div className="app-head">
-                <span className="app-head-label">Result</span>
+            <div className="workspace-appcol">
+              <div className="header-row app-result-head" style={{ marginBottom: 10 }}>
+                <h2 className="page-title" style={{ fontSize: 15 }}>Result</h2>
                 {script && currentRecipeId && (
                   <div className="app-head-save">
                     {libMsg && <span className="saved-msg">{libMsg}</span>}
@@ -1137,6 +1137,7 @@ export function App() {
                   </div>
                 )}
               </div>
+              <div className="workspace-app">
               {script ? (
                 <>
                   <RecipePanel
@@ -1207,7 +1208,8 @@ export function App() {
                   </div>
                 </div>
               )}
-            </div>{/* /workspace-app */}
+              </div>{/* /workspace-app */}
+            </div>{/* /workspace-appcol */}
             </div>{/* /workspace */}
 
             {script && !currentRecipeId && (
