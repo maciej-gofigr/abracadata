@@ -92,6 +92,16 @@ export const SAMPLE_PARAMS: RecipeParam[] = [
   },
 ];
 
+// Starter prompts for the sample data — hardcoded because the sample is static,
+// so there's no reason to spend a Haiku call generating them each time. Mirrors
+// what the live suggester would offer for orders + customers.
+export const SAMPLE_SUGGESTIONS: string[] = [
+  "Total revenue by region as a bar chart",
+  "Top 10 customers by total spend",
+  "Revenue by customer segment as a pie chart",
+  "Monthly revenue trend as a line chart",
+];
+
 export const SAMPLE_STEPS: RecipeStep[] = [
   { title: "Combine orders with customer details" },
   { title: "Keep orders at or above the minimum amount" },

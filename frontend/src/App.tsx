@@ -10,9 +10,7 @@ import { friendlyRunError, paramSettings, prettify } from "./lib/format";
 import {
   SAMPLE_CUSTOMERS_CSV,
   SAMPLE_ORDERS_CSV,
-  SAMPLE_PARAMS,
-  SAMPLE_SCRIPT,
-  SAMPLE_STEPS,
+  SAMPLE_SUGGESTIONS,
 } from "./lib/fixtures";
 import {
   addVersion,
@@ -277,15 +275,17 @@ export function App() {
       ];
       setInputs(next);
       setActiveInputIdx(0);
-      setScript(SAMPLE_SCRIPT);
-      setParams(SAMPLE_PARAMS);
-      setSteps(SAMPLE_STEPS);
-      const values = defaultsOf(SAMPLE_PARAMS);
-      setParamValues(values);
+      // Behave like a file drop: data in, no recipe yet, starter prompts shown.
+      // The sample is static, so its suggestions are hardcoded (no Haiku call).
+      setScript(null);
+      setParams([]);
+      setSteps([]);
+      setParamValues({});
       resetConversation();
       setCurrentRecipeId(null);
-      setCurrentRecipeName("Revenue by region");
-      await run(SAMPLE_SCRIPT, values, next);
+      setCurrentRecipeName("");
+      setSuggestions(SAMPLE_SUGGESTIONS);
+      setLoadingSuggestions(false);
     } catch (err) {
       setFileError(errorMessage(err));
     } finally {
