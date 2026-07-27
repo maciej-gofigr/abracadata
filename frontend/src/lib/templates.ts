@@ -239,9 +239,119 @@ INV-005,2026-06-01` },
   return { tables: { 'In list_a but not list_b': missing }, plots: {} };
 }`,
   },
+  {
+    slug: "value-distribution",
+    name: "Distribution of a value",
+    category: "Chart",
+    icon: "📈",
+    description: "See how a number column is spread — a histogram of amounts, ages, scores, wait times — with the min/max/average.",
+    params: [
+      { name: "value_column", label: "Value column", type: "text", source: { from: "columns", input: "data" }, default: "Amount", help: "The number column to chart" },
+      { name: "bins", label: "Number of bars", type: "number", default: 20, min: 1, help: "How many buckets" },
+    ],
+    inputs: [{ alias: "data", columns: ["Amount"] }],
+    samples: [{
+      alias: "data", filename: "amounts.csv", csv: `Order,Amount
+A,120
+B,340
+C,90
+D,560
+E,210
+F,75
+G,430
+H,180
+I,650
+J,300
+K,95
+L,410
+M,260
+N,140
+O,720
+P,50
+Q,330
+R,205
+S,480
+T,155`,
+    }],
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const val = col(t, params.value_column ?? 'Amount');
+  const nbins = Math.max(1, Math.floor(params.bins ?? 20));
+  const values = t.array(val).map(v => parseNumber(v)).filter(v => v === v);
+  const n = values.length;
+  const mean = n ? values.reduce((a, b) => a + b, 0) / n : 0;
+  const summary = [{ Count: n, Min: n ? Math.min(...values) : null, Max: n ? Math.max(...values) : null, Mean: Math.round(mean * 100) / 100 }];
+  // Raw Plotly figure — histogram isn't one of the shim helpers.
+  const fig = {
+    data: [{ type: 'histogram', x: values, nbinsx: nbins }],
+    layout: { title: { text: 'Distribution of ' + val }, xaxis: { title: { text: val } }, yaxis: { title: { text: 'Count' } }, bargap: 0.04 },
+  };
+  return { tables: { Summary: summary }, plots: { Distribution: fig } };
+}`,
+  },
+  {
+    slug: "stacked-breakdown",
+    name: "Stacked breakdown",
+    category: "Chart",
+    icon: "🧱",
+    description: "Break a total down by two categories at once — revenue by region, split by product — as a stacked bar chart.",
+    params: [
+      { name: "group_column", label: "Bars (x-axis)", type: "text", source: { from: "columns", input: "data" }, default: "Region" },
+      { name: "stack_column", label: "Split each bar by", type: "text", source: { from: "columns", input: "data" }, default: "Category" },
+      { name: "value_column", label: "Value to total", type: "text", source: { from: "columns", input: "data" }, default: "Amount" },
+    ],
+    inputs: [{ alias: "data", columns: ["Region", "Category", "Amount"] }],
+    samples: [{ alias: "data", filename: "sales.csv", csv: SALES_CSV }],
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const g = col(t, params.group_column ?? 'Region');
+  const s = col(t, params.stack_column ?? 'Category');
+  const v = col(t, params.value_column ?? 'Amount');
+  const rolled = t.derive({ __v: aq.escape(d => parseNumber(d[v])) }).groupby(g, s).rollup({ Total: op.sum('__v') });
+  const rows = rolled.objects();
+  const groups = [...new Set(rows.map(r => r[g]))];
+  const stacks = [...new Set(rows.map(r => r[s]))];
+  const at = {};
+  rows.forEach(r => { (at[r[g]] ??= {})[r[s]] = r.Total; });
+  // One bar trace per stack value, barmode: 'stack' — a raw Plotly figure.
+  const data = stacks.map(st => ({ type: 'bar', name: String(st), x: groups.map(String), y: groups.map(gr => at[gr]?.[st] ?? 0) }));
+  const fig = { data, layout: { title: { text: v + ' by ' + g + ', split by ' + s }, barmode: 'stack', xaxis: { title: { text: g } }, yaxis: { title: { text: v } } } };
+  return { tables: { Breakdown: rolled.orderby(g, s) }, plots: { 'Stacked breakdown': fig } };
+}`,
+  },
+  {
+    slug: "crosstab-heatmap",
+    name: "Cross-tab heatmap",
+    category: "Chart",
+    icon: "🌡️",
+    description: "A color grid of totals across two categories — spot the hot and cold cells at a glance (region × product, day × hour).",
+    params: [
+      { name: "row_column", label: "Rows", type: "text", source: { from: "columns", input: "data" }, default: "Region" },
+      { name: "col_column", label: "Columns", type: "text", source: { from: "columns", input: "data" }, default: "Category" },
+      { name: "value_column", label: "Value to total", type: "text", source: { from: "columns", input: "data" }, default: "Amount" },
+    ],
+    inputs: [{ alias: "data", columns: ["Region", "Category", "Amount"] }],
+    samples: [{ alias: "data", filename: "sales.csv", csv: SALES_CSV }],
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const rC = col(t, params.row_column ?? 'Region');
+  const cC = col(t, params.col_column ?? 'Category');
+  const vC = col(t, params.value_column ?? 'Amount');
+  const rolled = t.derive({ __v: aq.escape(d => parseNumber(d[vC])) }).groupby(rC, cC).rollup({ Total: op.sum('__v') });
+  const rows = rolled.objects();
+  const rowVals = [...new Set(rows.map(r => r[rC]))];
+  const colVals = [...new Set(rows.map(r => r[cC]))];
+  const at = {};
+  rows.forEach(r => { (at[r[rC]] ??= {})[r[cC]] = r.Total; });
+  const z = rowVals.map(rv => colVals.map(cv => at[rv]?.[cv] ?? 0));
+  // Raw Plotly heatmap.
+  const fig = { data: [{ type: 'heatmap', z, x: colVals.map(String), y: rowVals.map(String), colorscale: 'Blues', hoverongaps: false }], layout: { title: { text: vC + ': ' + rC + ' \\u00d7 ' + cC }, xaxis: { title: { text: cC } }, yaxis: { title: { text: rC } } } };
+  return { tables: { 'Cross-tab': rolled.orderby(rC, cC) }, plots: { Heatmap: fig } };
+}`,
+  },
 ];
 
-export const TEMPLATE_CATEGORIES = ["Summarize", "Combine", "Clean"];
+export const TEMPLATE_CATEGORIES = ["Summarize", "Chart", "Combine", "Clean"];
 
 export function templateBySlug(slug: string): Template | undefined {
   return TEMPLATES.find((t) => t.slug === slug);
