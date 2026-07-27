@@ -380,8 +380,24 @@ tbody tr:last-child td { border-bottom: none; }
   border-radius: 14px; padding: 14px;
 }
 .workspace-app > :last-child { margin-bottom: 0; }
-.app-head { padding: 2px 4px 12px; }
+.app-head { display: flex; align-items: center; gap: 10px; padding: 2px 4px 12px; }
 .app-head-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.app-head-save { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+/* floating "not saved yet" nudge for a freshly generated recipe */
+.save-banner {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50;
+  display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 24px);
+  background: var(--surface); border: 1px solid var(--accent); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2); padding: 11px 12px 11px 18px;
+  animation: save-banner-in 0.2s ease-out;
+}
+.save-banner-text { font-size: 13.5px; color: var(--ink); }
+.save-banner-text strong { font-weight: 640; }
+.save-banner .btn { white-space: nowrap; }
+@keyframes save-banner-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .save-banner { animation: none; } }
+@media (max-width: 520px) { .save-banner { left: 12px; right: 12px; transform: none; flex-wrap: wrap; justify-content: flex-end; } }
 
 /* empty state so the app surface reads as an app from the get-go */
 .app-empty { display: grid; place-items: center; min-height: 300px; text-align: center; padding: 24px; }

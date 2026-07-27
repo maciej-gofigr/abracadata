@@ -1126,7 +1126,17 @@ export function App() {
             </div>{/* /workspace-builder */}
 
             <div className="workspace-app">
-              <div className="app-head"><span className="app-head-label">Result</span></div>
+              <div className="app-head">
+                <span className="app-head-label">Result</span>
+                {script && currentRecipeId && (
+                  <div className="app-head-save">
+                    {libMsg && <span className="saved-msg">{libMsg}</span>}
+                    <button className="btn ghost" disabled={saving} onClick={saveToLibrary}>
+                      {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : "Save new version"}
+                    </button>
+                  </div>
+                )}
+              </div>
               {script ? (
                 <>
                   <RecipePanel
@@ -1187,12 +1197,6 @@ export function App() {
                     </section>
                   )}
 
-                  <div className="save-bar">
-                    <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
-                      {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : currentRecipeId ? "Save new version" : "Save to library"}
-                    </button>
-                    {libMsg && <span className="saved-msg">{libMsg}</span>}
-                  </div>
                 </>
               ) : (
                 <div className="app-empty">
@@ -1205,6 +1209,17 @@ export function App() {
               )}
             </div>{/* /workspace-app */}
             </div>{/* /workspace */}
+
+            {script && !currentRecipeId && (
+              <div className="save-banner" role="status">
+                <span className="save-banner-text">
+                  <strong>Recipe ready — not saved yet.</strong> Save it to your library to re-run on next month's files.
+                </span>
+                <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
+                  {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : "Save to library"}
+                </button>
+              </div>
+            )}
 
             {library_panel}
           </>
