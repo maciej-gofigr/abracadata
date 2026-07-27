@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import Papa from "papaparse";
-import { runRecipe } from "./recipeRuntime";
+import { runRecipe, toPreview } from "./recipeRuntime";
 import { SAMPLE_ORDERS_CSV, SAMPLE_CUSTOMERS_CSV } from "./fixtures";
 
 function parse(csv: string): Record<string, unknown>[] {
@@ -32,14 +32,10 @@ describe("JS recipe runtime (Arquero)", () => {
 
     const table = out.tables[0];
     expect(table.name).toBe("By region");
-    expect(table.preview.columns).toEqual(["Region", "Orders", "Revenue"]);
+    expect(table.columns).toEqual(["Region", "Orders", "Revenue"]);
 
-    // revenue sorted descending
-    const revIdx = table.preview.columns.indexOf("Revenue");
-    const revs = table.preview.rows.map((r) => r[revIdx] as number);
-    expect([...revs].sort((a, b) => b - a)).toEqual(revs);
-
-    // total revenue equals the sum of orders with Amount >= 100
+    const revs = table.rows.map((r) => r.Revenue as number);
+    expect([...revs].sort((a, b) => b - a)).toEqual(revs); // sorted descending
     const expected = orders.filter((o) => Number(o.Amount) >= 100).reduce((s, o) => s + Number(o.Amount), 0);
     expect(revs.reduce((a, b) => a + b, 0)).toBeCloseTo(expected, 2);
 
@@ -48,32 +44,34 @@ describe("JS recipe runtime (Arquero)", () => {
     expect(fig.data[0].type).toBe("bar");
     expect(fig.data[0].x.length).toBe(revs.length);
     expect(fig.layout.title.text).toBe("Revenue by region");
+
+    // preview is capped + typed
+    const preview = toPreview(table.columns, table.rows);
+    expect(preview.dtypes).toEqual(["string", "number", "number"]);
+    expect(preview.rows[0].length).toBe(3);
   });
 
   it("cleans messy real-world data via op.parseNumber / op.yearMonth", () => {
     const messy = [
-      { Amount: "$1,200.50", Date: "01/05/2024" }, // US date, currency string
-      { Amount: "800", Date: "Jan 6, 2024" },      // month-name date
-      { Amount: "$1,000", Date: "2024-02-03" },    // ISO date
-      { Amount: "", Date: "2024-02-10" },          // blank amount -> dropped
+      { Amount: "$1,200.50", Date: "01/05/2024" },
+      { Amount: "800", Date: "Jan 6, 2024" },
+      { Amount: "$1,000", Date: "2024-02-03" },
+      { Amount: "", Date: "2024-02-10" }, // blank amount -> dropped
     ];
     const source = `
       function transform(inputs, params) {
         const summary = inputs.sales
           .derive({ amt: d => op.parseNumber(d.Amount), ym: d => op.yearMonth(d.Date) })
-          .filter(d => d.amt === d.amt) // drop NaN (unparseable amounts)
+          .filter(d => d.amt === d.amt)
           .groupby('ym')
           .rollup({ Revenue: op.sum('amt') })
           .orderby('ym');
         return { tables: { 'By month': summary }, plots: {} };
       }`;
     const out = runRecipe(source, { sales: messy });
-    const t = out.tables[0].preview;
-
-    expect(t.columns).toEqual(["ym", "Revenue"]);
-    const byMonth = Object.fromEntries(t.rows.map((r) => [r[0], r[1]]));
-    expect(byMonth["2024-01"]).toBeCloseTo(2000.5, 2); // 1200.50 + 800
-    expect(byMonth["2024-02"]).toBeCloseTo(1000, 2);   // 1000 ; blank row dropped
+    const byMonth = Object.fromEntries(out.tables[0].rows.map((r) => [r.ym, r.Revenue]));
+    expect(byMonth["2024-01"]).toBeCloseTo(2000.5, 2);
+    expect(byMonth["2024-02"]).toBeCloseTo(1000, 2);
   });
 
   it("rejects a recipe that returns no table", () => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { pyWorker } from "../lib/pyodide";
+import { dataWorker } from "../lib/worker";
 import type { RecipeParam } from "../types";
 
 export type ParamValues = Record<string, string | number | boolean>;
@@ -36,7 +36,7 @@ export function useParamOptions(
       for (const v of valueSpecs) {
         if (!v.alias || !inputs.some((i) => i.alias === v.alias)) continue;
         try {
-          const r = await pyWorker.distinctValues(v.alias, v.column);
+          const r = await dataWorker.distinctValues(v.alias, v.column);
           next[v.name] = r.values ?? [];
         } catch {
           next[v.name] = [];

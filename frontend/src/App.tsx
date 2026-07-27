@@ -4,7 +4,7 @@ import { AuthModal } from "./components/AuthModal";
 import { DataTable } from "./components/DataTable";
 import { DropZone } from "./components/DropZone";
 import { PlotView } from "./components/PlotView";
-import { pyWorker } from "./lib/pyodide";
+import { dataWorker } from "./lib/worker";
 import { buildRecipe, parseRecipe } from "./lib/recipe";
 import { friendlyRunError, paramSettings, prettify } from "./lib/format";
 import {
@@ -98,7 +98,7 @@ export function App() {
   const [copiedShare, setCopiedShare] = useState(false);
 
   useEffect(() => {
-    pyWorker.warmUp();
+    dataWorker.warmUp();
     void refreshLibrary();
     if (AUTH_ENABLED) void authMe().then((r) => setUser(r.email)).catch(() => {});
     applyRoute(window.location.pathname);
@@ -159,7 +159,7 @@ export function App() {
     setRunning(true);
     setRunError(null);
     try {
-      setOutput(await pyWorker.runScript(src, values));
+      setOutput(await dataWorker.runScript(src, values));
     } catch (err) {
       setOutput(null);
       setRunError(errorMessage(err));
@@ -174,7 +174,7 @@ export function App() {
     let loadedRecipe = false;
     let addedData = false;
     for (const file of files) {
-      if (file.name.toLowerCase().endsWith(".py")) {
+      if (file.name.toLowerCase().endsWith(".js")) {
         loadedRecipe = (await loadRecipeFile(file)) || loadedRecipe;
       } else {
         const added = await loadDataFile(file, current);
@@ -222,14 +222,14 @@ export function App() {
     try {
       let alias = uniqueAlias(aliasFromFilename(file.name), current);
       const buffer = await file.arrayBuffer();
-      const { preview } = await pyWorker.loadInput(alias, file.name, buffer);
+      const { preview } = await dataWorker.loadInput(alias, file.name, buffer);
       // Re-running a saved recipe: snap this file into the named slot whose
       // columns it matches, so it works regardless of this month's filename.
       if (expectedInputs.length) {
         const taken = new Set(current.map((i) => i.alias));
         const match = matchExpectedSlot(preview.columns, expectedInputs, taken);
         if (match && match !== alias) {
-          await pyWorker.renameInput(alias, match);
+          await dataWorker.renameInput(alias, match);
           alias = match;
         }
       }
@@ -265,10 +265,10 @@ export function App() {
     setOutput(null);
     setLoadingMsg("Loading sample files… (first load also fetches the runtime, ~10s)");
     try {
-      await pyWorker.clearInputs();
+      await dataWorker.clearInputs();
       const enc = new TextEncoder();
-      const ord = await pyWorker.loadInput("orders", "orders.csv", enc.encode(SAMPLE_ORDERS_CSV).buffer as ArrayBuffer);
-      const cus = await pyWorker.loadInput("customers", "customers.csv", enc.encode(SAMPLE_CUSTOMERS_CSV).buffer as ArrayBuffer);
+      const ord = await dataWorker.loadInput("orders", "orders.csv", enc.encode(SAMPLE_ORDERS_CSV).buffer as ArrayBuffer);
+      const cus = await dataWorker.loadInput("customers", "customers.csv", enc.encode(SAMPLE_CUSTOMERS_CSV).buffer as ArrayBuffer);
       const next: InputFile[] = [
         { alias: "orders", fileName: "orders.csv", preview: ord.preview },
         { alias: "customers", fileName: "customers.csv", preview: cus.preview },
@@ -410,7 +410,7 @@ export function App() {
       setFileError(`Another slot is already named “${next}”.`);
       return;
     }
-    await pyWorker.renameInput(inp.alias, next);
+    await dataWorker.renameInput(inp.alias, next);
     const updated = inputs.map((i) => (i === inp ? { ...i, alias: next } : i));
     setInputs(updated);
     if (script) void run(script, paramValues, updated);
@@ -418,7 +418,7 @@ export function App() {
 
   async function removeInput(target: InputFile) {
     const remaining = inputs.filter((i) => i !== target);
-    await pyWorker.removeInput(target.alias);
+    await dataWorker.removeInput(target.alias);
     setInputs(remaining);
     setActiveInputIdx((idx) => Math.max(0, Math.min(idx, remaining.length - 1)));
     setAliasDraft((d) => {
@@ -443,7 +443,7 @@ export function App() {
       inputs: inputs.map((i) => ({ alias: i.alias, columns: i.preview.columns })),
       prompt: userPrompts().slice(-1)[0],
       // NOTE: `steps` aren't persisted yet (no column server-side) — they live in
-      // the downloaded .py metadata and the live authoring session only.
+      // the downloaded .js metadata and the live authoring session only.
     };
     setSaving(true);
     try {
@@ -483,7 +483,7 @@ export function App() {
       const d = await getRecipe(id);
       const recipe = applyRecipeFromDetail(d);
       if (!recipe) return;
-      void pyWorker.clearInputs();
+      void dataWorker.clearInputs();
       setApplyState({ recipe, mode: "owner", recipeId: d.id });
       window.scrollTo({ top: 0 });
     } catch (err) {
@@ -494,7 +494,7 @@ export function App() {
   }
 
   function openTemplate(t: Template) {
-    void pyWorker.clearInputs();
+    void dataWorker.clearInputs();
     setShowGallery(false);
     setApplyState({ recipe: templateToApply(t), mode: "template" });
     window.history.pushState({}, "", `/t/${t.slug}`);
@@ -514,7 +514,7 @@ export function App() {
     const onDeepLink = /^\/(s|t|templates)/.test(window.location.pathname);
     setApplyState(null);
     setShowGallery(false);
-    void pyWorker.clearInputs();
+    void dataWorker.clearInputs();
     if (onDeepLink) {
       window.history.pushState({}, "", "/");
       setMeta(APP_NAME, APP_TAGLINE);
@@ -679,14 +679,14 @@ export function App() {
     setExpectedInputs([]);
     setActiveInputIdx(0);
     setLibMsg(null);
-    void pyWorker.clearInputs();
+    void dataWorker.clearInputs();
   }
 
   async function downloadTable(name: string) {
     if (exportingTable) return;
     setExportingTable(name);
     try {
-      const { csv } = await pyWorker.exportTable(name);
+      const { csv } = await dataWorker.exportTable(name);
       downloadBlob(`${name.replace(/\s+/g, "_")}.csv`, csv, "text/csv");
     } finally {
       setExportingTable(null);
@@ -706,7 +706,7 @@ export function App() {
       params: params.map((p) => (p.name in paramValues ? { ...p, default: paramValues[p.name] } : p)),
       steps,
     };
-    downloadBlob(`${(meta.name || "recipe").replace(/\s+/g, "_")}.py`, buildRecipe(script, meta), "text/x-python");
+    downloadBlob(`${(meta.name || "recipe").replace(/\s+/g, "_")}.js`, buildRecipe(script, meta), "text/javascript");
   }
 
   const hasInputs = inputs.length > 0;
@@ -1362,7 +1362,7 @@ function applyRecipeFromShared(s: SharedRecipe): ApplyRecipe {
   };
 }
 
-/** Translate a Python traceback's last line into something a non-technical
+/** Translate an error's last line into something a non-technical
  * user can act on. Falls back to the raw last line if we don't recognise it. */
 
 function downloadBlob(name: string, content: string, type: string) {

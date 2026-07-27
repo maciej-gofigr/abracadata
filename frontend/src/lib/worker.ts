@@ -1,14 +1,15 @@
 import type { RunResult, TablePreview } from "../types";
 
 interface Pending {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
 }
 
-class PyWorker {
-  private worker = new Worker(new URL("./pyodideWorker.ts", import.meta.url), {
-    type: "module",
-  });
+// Typed RPC bridge to the data worker (jsWorker.ts), which owns the recipe
+// runtime + parsed inputs. Same method surface the app has always used; only the
+// engine underneath changed (Arquero/JS instead of Pyodide/pandas).
+class DataWorker {
+  private worker = new Worker(new URL("./jsWorker.ts", import.meta.url), { type: "module" });
   private seq = 0;
   private pending = new Map<number, Pending>();
 
@@ -23,18 +24,15 @@ class PyWorker {
     };
   }
 
-  private call<T>(
-    msg: Record<string, unknown>,
-    transfer: Transferable[] = [],
-  ): Promise<T> {
+  private call<T>(msg: Record<string, unknown>, transfer: Transferable[] = []): Promise<T> {
     const id = ++this.seq;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       this.worker.postMessage({ id, ...msg }, transfer);
     });
   }
 
-  /** Kick off the Pyodide download without waiting for it. */
+  /** No heavy runtime to fetch anymore; kept for call-site compatibility. */
   warmUp(): void {
     void this.call({ type: "init" }).catch(() => {});
   }
@@ -44,10 +42,7 @@ class PyWorker {
   }
 
   loadInput(alias: string, name: string, buffer: ArrayBuffer) {
-    return this.call<{ preview: TablePreview }>(
-      { type: "loadInput", alias, name, buffer },
-      [buffer],
-    );
+    return this.call<{ preview: TablePreview }>({ type: "loadInput", alias, name, buffer }, [buffer]);
   }
 
   renameInput(oldAlias: string, alias: string) {
@@ -63,35 +58,26 @@ class PyWorker {
   }
 
   runScript(source: string, params: Record<string, unknown>) {
-    return this.call<RunResult>({
-      type: "runScript",
-      script: source,
-      params: JSON.stringify(params ?? {}),
-    });
+    return this.call<RunResult>({ type: "runScript", script: source, params: JSON.stringify(params ?? {}) });
   }
 
   exportTable(name: string) {
     return this.call<{ csv: string }>({ type: "exportTable", table: name });
   }
 
-  // --- Agent tools (return the raw tool result, including {ok:false} errors) ---
+  // --- Agent tools (resolve with the raw tool result, including {ok:false}) ---
 
   previewRows(alias: string, n = 5) {
-    return this.call<any>({ type: "previewRows", alias, n });
+    return this.call<unknown>({ type: "previewRows", alias, n });
   }
 
   columnProfile(alias: string, column: string) {
-    return this.call<any>({ type: "columnProfile", alias, column });
+    return this.call<unknown>({ type: "columnProfile", alias, column });
   }
 
   runRecipeTest(script: string, params: Record<string, unknown>, includeValues: boolean) {
-    return this.call<any>({
-      type: "runRecipeTest",
-      script,
-      params: JSON.stringify(params ?? {}),
-      includeValues,
-    });
+    return this.call<unknown>({ type: "runRecipeTest", script, params: JSON.stringify(params ?? {}), includeValues });
   }
 }
 
-export const pyWorker = new PyWorker();
+export const dataWorker = new DataWorker();

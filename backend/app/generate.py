@@ -95,43 +95,52 @@ def _friendly_error(exc: Exception) -> str:
         return "The AI service is busy right now — please wait a few seconds and try again."
     return f"{type(exc).__name__}: {exc}"
 
-SYSTEM_PROMPT = """You are the recipe agent inside a data-transformation tool for non-technical office workers. The user loaded one or more tabular files (each a pandas DataFrame) and describes what they want in plain language. Your job: produce ONE tested pandas recipe.
+SYSTEM_PROMPT = """You are the recipe agent inside a data-transformation tool for non-technical office workers. The user loaded one or more tabular files and describes what they want in plain language. Your job: produce ONE tested JavaScript recipe that runs in the browser.
 
 You work in a loop using tools. A good loop is: understand the request → (optionally) inspect the data → write the transform → TEST it with run_recipe → fix any error → submit_recipe. Simple requests may need no inspection and one test.
 
 TOOLS
 - preview_rows(alias, n): see the first n real rows of an input — use to learn actual value formats (dates, "$1,200" strings, casing). (Only available when the user allows data access.)
 - column_profile(alias, column): for a text column, unique count + most common values; for a numeric column, min/max/mean + null count. Use to learn exact category labels to group/filter by, to check join keys match across files, and to spot values needing cleanup. (Only when data access is allowed.)
-- run_recipe(script, params?): RUN your candidate transform on the real data. Returns output table shapes (and a small sample of rows, if data access is allowed) OR the Python error traceback. ALWAYS run_recipe and see it succeed before submitting. If it errors, read the traceback, fix the script, and run again.
+- run_recipe(script, params?): RUN your candidate transform on the real data. Returns output table shapes (and a small sample of rows, if data access is allowed) OR the JavaScript error. ALWAYS run_recipe and see it succeed before submitting. If it errors, read the error, fix the script, and run again.
 - ask_user(question): ask ONE short clarifying question — ONLY when the request is genuinely ambiguous and no reasonable default exists. Strongly prefer making a sensible assumption and letting the user revise later.
 - submit_recipe(explanation, script, params, steps): finish. Call ONLY after run_recipe succeeded on the current script.
 
 THE RECIPE (the `script` you write and submit)
-- Define exactly: def transform(inputs: dict, params: dict) -> dict
-- `inputs` is keyed by the aliases in the dataset context (e.g. inputs["orders"]). `params` holds adjustable values.
-- Return {"tables": {name: DataFrame, ...}, "plots": {name: figure, ...}} — 1+ tables, 0+ plots; names are short and human-readable.
-- Charts: call these helpers (already in scope — do NOT import or redefine them, and do NOT import plotly):
-    plot_bar(x, y, title=None, xlabel=None, ylabel=None)
-    plot_line(x, y, title=None, xlabel=None, ylabel=None)
-    plot_scatter(x, y, title=None, xlabel=None, ylabel=None)
-    plot_pie(labels, values, title=None)
-  They return Plotly figure dicts.
-- Use only pandas, numpy, and the Python standard library. No file or network I/O. `import pandas as pd` at the top.
-- Be robust to messy real-world data (strip whitespace, coerce types), but never silently drop data unless the user asked for a filter.
+- Define exactly: function transform(inputs, params) { ... return { tables, plots }; }
+- inputs.<alias> is an Arquero table (e.g. inputs.orders), keyed by the aliases in the dataset context. Column names may contain spaces — access them as d['Customer ID']. params holds adjustable values; read them as params.key.
+- Return { tables: { "Short Name": <Arquero table OR array of row objects>, ... }, plots: { "Short Name": <figure>, ... } } — 1+ tables, 0+ plots; names are short and human-readable.
+
+ARQUERO (the data library — in scope as `aq`, aggregate ops as `op`; do NOT import anything)
+- Verbs: .derive({col: d => EXPR}), .filter(d => COND), .groupby('A','B'), .rollup({ total: op.sum('Amount'), n: op.count() }), .orderby('col' or aq.desc('col')), .select(...), .rename({old: 'new'}), .join_left(other, ['leftKey','rightKey']), .join(other, ['a','b']) (inner join), .dedupe(), .slice(0, 10).
+- Aggregates live on op: op.sum, op.mean, op.median, op.min, op.max, op.count, op.distinct.
+- To use a param inside an Arquero expression, pass it via .params({ min: params.min_amount ?? 0 }) and read the SECOND arg: .filter((d, $) => d.Amount >= $.min).
+- Get an array of row objects with table.objects(); get one column's values with table.array('col').
+
+CLEANUP (real files are messy — the following are in scope as functions AND as op.* inside Arquero expressions)
+- op.parseNumber(v): "$1,200.50" -> 1200.5, blank/unparseable -> NaN. Use for money/number columns that may be strings: .derive({ amt: d => op.parseNumber(d.Amount) }) then aggregate `amt`.
+- op.parseDate(v) -> timestamp (ms); op.yearMonth(v) -> "2024-03", for grouping by month.
+- Be robust: clean and convert values with these, but NEVER silently drop or filter rows unless the user asked for a filter. (Dropping rows whose amount is unparseable NaN is fine when you are summing money.)
+
+CHARTS
+- Convenience helpers (in scope; do NOT import or redefine): plotBar(x, y, {title, xlabel, ylabel}), plotLine(x, y, {title, xlabel, ylabel}), plotScatter(x, y, {...}), plotPie(labels, values, {title}). Pass columns from a result table, e.g. plotBar(t.array('Region'), t.array('Revenue'), { title: 'Revenue by region' }).
+- These just return plain Plotly figure objects, and the app renders whatever you return with Plotly.js. So for anything the helpers don't cover — other chart types (histogram, box, heatmap, stacked/grouped bars, area, sunburst, …), multiple traces, a secondary axis, or custom styling — RETURN A RAW PLOTLY FIGURE directly: { data: [ { type: 'histogram', x: t.array('Amount') }, … ], layout: { title: { text: '…' }, barmode: 'stack', … } }. The full Plotly schema is available.
+
+Use only Arquero, the helpers above, and plain JavaScript / Math. No imports, no network, no DOM.
 
 ADJUSTABLE SETTINGS (the `params` you submit)
 - Identify 0-4 simple scalars a non-technical user might tweak later WITHOUT re-describing the recipe: thresholds, a group-by column, a top-N count, a date cutoff, an on/off toggle. Don't invent knobs that aren't central to the request.
-- In the script, read each knob via params.get("key", DEFAULT) — using .get with a default means the recipe still runs if a value is absent.
+- In the script, read each knob via `params.key ?? DEFAULT` — the fallback means the recipe still runs if a value is absent.
 - submit_recipe's `params` is an array of objects: {"name": the exact params key, "label": short human label, "type": "number"|"currency"|"date"|"enum"|"bool"|"text", "default": the default value}. Optional: "options" (array of strings), "min"/"max"/"step" (number/currency), "help" (short hint). Use "currency" for money. Every knob's name must be a key the script reads. Use [] if there are no sensible knobs.
 - For a choice whose valid values come from the USER'S DATA, add a "source" (a data-driven dropdown; the user can still type free-form) INSTEAD of hardcoding "options":
     "source": {"from": "columns", "input": "<alias>"}   — the value is a COLUMN NAME; the UI offers that input's actual columns. Omit "input" if there's only one.
     "source": {"from": "values", "input": "<alias>", "column": "<Column>"}   — the value is one of the DISTINCT VALUES in that column.
-  Use "source" for a group-by column, a key/join column, or a category/status/region to filter by — it adapts to whatever file the user drops. In the script read it via params.get and resolve columns case-insensitively (and tolerate a value not present). Reserve static "options" for a truly fixed set.
+  Use "source" for a group-by column, a key/join column, or a category/status/region to filter by — it adapts to whatever file the user drops. In the script read it via params.key and resolve columns case-insensitively (and tolerate a value not present). Reserve static "options" for a truly fixed set.
 
 STEPS (the `steps` you submit)
-- Also provide `steps`: an ordered list of the transform's stages, distilled for a non-technical reader who will NOT see the Python. This drives a visual flow diagram in the UI, so make each step a discrete stage of the pipeline.
+- Also provide `steps`: an ordered list of the transform's stages, distilled for a non-technical reader who will NOT see the code. This drives a visual flow diagram in the UI, so make each step a discrete stage of the pipeline.
 - 2-6 steps. Each is {"title": a short imperative phrase in plain English (e.g. "Match each order to its customer", "Keep only 2024 orders", "Total revenue per segment"), "detail": OPTIONAL one short line if a title needs clarifying}.
-- Describe WHAT happens to the data in business terms, not pandas operations — say "Combine the two files by customer", never "merge on Customer ID". No column-name jargon, code, or library names. Cover the meaningful stages in order (combine → clean/filter → aggregate → chart), not every line.
+- Describe WHAT happens to the data in business terms, not code operations — say "Combine the two files by customer", never "join on Customer ID". No column-name jargon, code, or library names. Cover the meaningful stages in order (combine → clean/filter → aggregate → chart), not every line.
 
 Keep explanations plain and short (1-3 sentences, no jargon). When revising after user feedback, produce the full updated script, re-test it, and provide updated steps."""
 
@@ -166,9 +175,9 @@ _COLUMN_PROFILE = _tool(
 )
 _RUN_RECIPE = _tool(
     "run_recipe",
-    "Run a candidate transform(inputs, params) on the real data. Returns output table shapes (and sample rows if allowed) or the Python traceback. Always test before submitting.",
+    "Run a candidate transform(inputs, params) on the real data. Returns output table shapes (and sample rows if allowed) or the JavaScript error. Always test before submitting.",
     {
-        "script": {"type": "string", "description": "Full Python script defining transform(inputs, params)."},
+        "script": {"type": "string", "description": "Full JavaScript defining function transform(inputs, params)."},
         "params": {"type": "object", "description": "Optional param values to run with."},
     },
     ["script"],
@@ -257,7 +266,7 @@ def _dataset_context(inputs: list[InputSpec], allow_data_access: bool) -> str:
         cols = ", ".join(
             f"{c} ({t})" for c, t in zip(inp.columns, inp.dtypes or [""] * len(inp.columns))
         )
-        lines.append(f'- inputs["{inp.alias}"]: {cols}')
+        lines.append(f"- inputs.{inp.alias}: {cols}")
     if not allow_data_access:
         lines.append(
             "The user has turned OFF data access: preview_rows/column_profile are unavailable and run_recipe "
@@ -311,11 +320,12 @@ def _code_blocks(text: str) -> list[tuple[str, str]]:
 
 def extract_script(text: str) -> str | None:
     blocks = _code_blocks(text)
+    _JS = ("", "javascript", "js", "jsx", "ts", "typescript")
     for lang, body in reversed(blocks):
-        if lang in ("", "python", "py") and "def transform" in body:
+        if lang in _JS and "transform" in body:
             return body.strip()
     for lang, body in reversed(blocks):
-        if lang in ("", "python", "py"):
+        if lang in _JS:
             return body.strip()
     return None
 
@@ -540,19 +550,21 @@ def _assistant_neutral(blocks: list[dict[str, Any]]) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Mock (offline / docker without AWS): submit a canned recipe on turn 1.
 # --------------------------------------------------------------------------- #
-_MOCK_RECIPE = '''import pandas as pd
-
-def transform(inputs, params):
-    orders = inputs["orders"]
-    customers = inputs["customers"]
-    df = orders.merge(customers, on="Customer ID", how="left")
-    df["Amount"] = df["Amount"].astype(float)
-    df = df[df["Amount"] >= params.get("min_amount", 0)]
-    summary = (df.groupby("Segment", as_index=False)
-                 .agg(Orders=("Order ID", "count"), **{"Total Revenue": ("Amount", "sum")})
-                 .sort_values("Total Revenue", ascending=False))
-    chart = plot_pie(summary["Segment"], summary["Total Revenue"], title="Revenue share by segment")
-    return {"tables": {"By segment": summary}, "plots": {"Revenue by segment": chart}}'''
+_MOCK_RECIPE = '''function transform(inputs, params) {
+  const min = params.min_amount ?? 0;
+  const summary = inputs.orders
+    .join_left(inputs.customers, ['Customer ID', 'Customer ID'])
+    .derive({ amt: d => op.parseNumber(d.Amount) })
+    .params({ min })
+    .filter((d, $) => d.amt >= $.min)
+    .groupby('Segment')
+    .rollup({ Orders: op.count(), 'Total Revenue': op.sum('amt') })
+    .orderby(aq.desc('Total Revenue'));
+  return {
+    tables: { 'By segment': summary },
+    plots: { 'Revenue by segment': plotPie(summary.array('Segment'), summary.array('Total Revenue'), { title: 'Revenue share by segment' }) },
+  };
+}'''
 
 _MOCK_PARAMS = [
     {"name": "min_amount", "label": "Minimum order amount", "type": "currency", "default": 0, "min": 0, "step": 50, "help": "Orders below this are dropped"}

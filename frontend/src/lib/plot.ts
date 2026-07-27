@@ -1,8 +1,8 @@
 import type { PlotlyFigure } from "../types";
 
 // Plotly.js is large, so it's loaded lazily — only when a recipe actually
-// produces a plot. The Python side emits a plain figure spec (data + layout);
-// Plotly.js renders it natively here in the browser (no Plotly in Pyodide).
+// produces a plot. Recipes build a plain figure spec (data + layout) via the
+// injected plot* helpers; Plotly.js renders it natively here in the browser.
 let plotlyPromise: Promise<any> | null = null;
 
 function getPlotly(): Promise<any> {

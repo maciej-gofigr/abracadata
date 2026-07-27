@@ -1,22 +1,21 @@
 import { useMemo } from "react";
-import Prism from "prismjs";
-import "prismjs/components/prism-python";
+import Prism from "prismjs"; // core bundles the JavaScript grammar — no component import needed
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**
- * A small editable code field with Python syntax highlighting: a transparent
+ * A small editable code field with JavaScript syntax highlighting: a transparent
  * <textarea> overlays a Prism-highlighted <pre>, kept in perfect alignment by
  * sharing font/padding/wrapping. Avoids a heavy editor dependency (and its
  * older-React peer pins) while staying fully editable. Highlighting is a
  * read-only enhancement — the textarea remains the source of truth.
  */
 export function CodeEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const grammar = Prism.languages.python;
+  const grammar = Prism.languages.javascript;
   const html = useMemo(
-    () => (grammar ? Prism.highlight(value, grammar, "python") : escapeHtml(value)),
+    () => (grammar ? Prism.highlight(value, grammar, "javascript") : escapeHtml(value)),
     [value, grammar],
   );
 
@@ -33,7 +32,7 @@ export function CodeEditor({ value, onChange }: { value: string; onChange: (valu
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
-        aria-label="Recipe Python"
+        aria-label="Recipe code"
       />
     </div>
   );

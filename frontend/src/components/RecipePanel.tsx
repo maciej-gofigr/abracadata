@@ -53,14 +53,14 @@ export function RecipePanel({
               className={`recipe-tab ${active === "python" ? "active" : ""}`}
               onClick={() => setTab("python")}
             >
-              Python
+              Code
             </button>
           </div>
         ) : (
-          <h2>Python</h2>
+          <h2>Code</h2>
         )}
         <div className="spacer" />
-        <button className="btn ghost" onClick={onDownload}>Download .py</button>
+        <button className="btn ghost" onClick={onDownload}>Download .js</button>
       </div>
 
       {active === "steps" ? (

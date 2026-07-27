@@ -15,9 +15,9 @@ def test_health():
 
 
 SCRIPT = (
-    "import pandas as pd\n\n"
-    "def transform(inputs, params):\n"
-    '    return {"tables": {"result": inputs["orders"]}, "plots": {}}\n'
+    "function transform(inputs, params) {\n"
+    "  return { tables: { result: inputs.orders }, plots: {} };\n"
+    "}\n"
 )
 
 
@@ -53,7 +53,7 @@ def test_generate_streams_then_tool_use(monkeypatch):
     tool_use = [e for e in events if e.get("type") == "tool_use"]
     assert len(tool_use) == 1
     assert tool_use[0]["calls"][0]["name"] == "run_recipe"
-    assert tool_use[0]["calls"][0]["input"]["script"].startswith("import pandas")
+    assert tool_use[0]["calls"][0]["input"]["script"].startswith("function transform")
 
 
 def test_generate_final_via_submit_recipe(monkeypatch):
@@ -82,7 +82,7 @@ def test_generate_final_via_submit_recipe(monkeypatch):
     with client.stream("POST", "/generate", json=payload) as r:
         events = _events(r)
     final = [e for e in events if e.get("type") == "final"][0]
-    assert "def transform(inputs, params)" in final["script"]
+    assert "function transform(inputs, params)" in final["script"]
     assert final["explanation"] == "Returns the orders unchanged."
     assert final["params"][0]["name"] == "n"
     assert final["submit_id"] == "s1"
@@ -120,7 +120,7 @@ def test_to_converse_maps_tools_and_results():
         ],
     )
     msgs = generate._to_converse(req)
-    assert msgs[0]["role"] == "user" and "inputs[\"orders\"]" in msgs[0]["content"][0]["text"]
+    assert msgs[0]["role"] == "user" and "inputs.orders" in msgs[0]["content"][0]["text"]
     assert msgs[1]["role"] == "assistant" and msgs[1]["content"][0]["toolUse"]["name"] == "run_recipe"
     assert msgs[2]["role"] == "user" and msgs[2]["content"][0]["toolResult"]["status"] == "success"
 
@@ -156,13 +156,13 @@ def test_suggest_empty_and_mock(monkeypatch):
 def test_extract_script_ignores_trailing_json_knob_block():
     text = (
         "Here's a recipe.\n\n"
-        "```python\nimport pandas as pd\n\ndef transform(inputs, params):\n"
-        '    return {"tables": {"result": inputs["orders"]}, "plots": {}}\n```\n\n'
+        "```javascript\nfunction transform(inputs, params) {\n"
+        "  return { tables: { result: inputs.orders }, plots: {} };\n}\n```\n\n"
         '```json\n[{"name": "min_amount", "label": "Min", "type": "currency", "default": 100}]\n```'
     )
     script = generate.extract_script(text)
-    assert script is not None and script.startswith("import pandas")
-    assert "def transform(inputs, params)" in script
+    assert script is not None and script.startswith("function transform")
+    assert "function transform(inputs, params)" in script
     assert "min_amount" not in script  # the json block is not the script
 
     params = generate.extract_params(text)
@@ -210,5 +210,5 @@ def test_mock_generate_returns_final(monkeypatch):
     ) as r:
         events = _events(r)
     final = [e for e in events if e.get("type") == "final"][0]
-    assert "def transform" in final["script"]
+    assert "transform" in final["script"]
     assert final["params"] and final["params"][0]["name"] == "min_amount"

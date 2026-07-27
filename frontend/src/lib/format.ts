@@ -8,7 +8,7 @@ export function prettify(name: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Translate a Python traceback's last line into plain, actionable language. */
+/** Translate an error's last line into plain, actionable language. */
 export function friendlyRunError(trace: string): string {
   const last = trace.trim().split("\n").filter(Boolean).pop() ?? trace;
   let m: RegExpMatchArray | null;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { pyWorker } from "../lib/pyodide";
+import { dataWorker } from "../lib/worker";
 import { friendlyRunError, prettify } from "../lib/format";
 import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./ParamControl";
 import { DataTable } from "./DataTable";
@@ -67,8 +67,8 @@ export function ApplyView({
 
   // Fresh worker state whenever we enter an apply view.
   useEffect(() => {
-    void pyWorker.clearInputs();
-    pyWorker.warmUp();
+    void dataWorker.clearInputs();
+    dataWorker.warmUp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,7 +83,7 @@ export function ApplyView({
     setRunning(true);
     setRunError(null);
     try {
-      setOutput(await pyWorker.runScript(recipe.script, values));
+      setOutput(await dataWorker.runScript(recipe.script, values));
     } catch (err) {
       setOutput(null);
       setRunError(err instanceof Error ? err.message : String(err));
@@ -93,13 +93,13 @@ export function ApplyView({
   }
 
   async function dropToSlot(alias: string, files: File[]) {
-    const file = files.find((f) => !f.name.toLowerCase().endsWith(".py"));
+    const file = files.find((f) => !f.name.toLowerCase().endsWith(".js"));
     if (!file) return;
     setSlotError(null);
     setLoadingSlot(alias);
     try {
       const buffer = await file.arrayBuffer();
-      const { preview } = await pyWorker.loadInput(alias, file.name, buffer);
+      const { preview } = await dataWorker.loadInput(alias, file.name, buffer);
       setSlots((prev) => ({ ...prev, [alias]: { fileName: file.name, preview } }));
       filledRef.current.add(alias);
       if (slotAliases.every((a) => filledRef.current.has(a))) void run(paramValues);
@@ -117,7 +117,7 @@ export function ApplyView({
       for (const s of recipe.samples) {
         setLoadingSlot(s.alias);
         const buffer = new TextEncoder().encode(s.csv).buffer as ArrayBuffer;
-        const { preview } = await pyWorker.loadInput(s.alias, s.filename, buffer);
+        const { preview } = await dataWorker.loadInput(s.alias, s.filename, buffer);
         setSlots((prev) => ({ ...prev, [s.alias]: { fileName: s.filename, preview } }));
         filledRef.current.add(s.alias);
       }
@@ -130,7 +130,7 @@ export function ApplyView({
   }
 
   async function clearSlot(alias: string) {
-    await pyWorker.removeInput(alias);
+    await dataWorker.removeInput(alias);
     filledRef.current.delete(alias);
     setSlots((prev) => ({ ...prev, [alias]: null }));
     setOutput(null);
@@ -157,7 +157,7 @@ export function ApplyView({
     if (exporting) return;
     setExporting(name);
     try {
-      const { csv } = await pyWorker.exportTable(name);
+      const { csv } = await dataWorker.exportTable(name);
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

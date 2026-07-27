@@ -49,6 +49,16 @@ export function yearMonth(v: unknown): string | null {
   return d ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}` : null;
 }
 
+/** Resolve a column name against a table case-insensitively (files vary in casing). */
+export function col(table: unknown, name: unknown): string {
+  const t = table as { columnNames?: () => string[] };
+  const cols = typeof t?.columnNames === "function" ? t.columnNames() : [];
+  const want = String(name).trim().toLowerCase();
+  const found = cols.find((c) => String(c).trim().toLowerCase() === want);
+  if (!found) throw new Error(`Column "${name}" not found. Columns: ${cols.join(", ")}`);
+  return found;
+}
+
 // --- Plotly figure builders (plain dicts, no plotly import) --------------------
 type PlotOpts = { title?: string; xlabel?: string; ylabel?: string };
 function layout(o: PlotOpts) {

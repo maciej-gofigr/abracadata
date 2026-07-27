@@ -23,17 +23,6 @@ export interface Template {
   samples: TemplateSample[];
 }
 
-// Shared helper injected at the top of every template script.
-const HELPER = `import pandas as pd
-
-def _col(df, name):
-    m = {str(c).strip().lower(): c for c in df.columns}
-    k = str(name).strip().lower()
-    if k not in m:
-        raise KeyError("Column '%s' not found. Columns in your file: %s" % (name, ", ".join(str(c) for c in df.columns)))
-    return m[k]
-`;
-
 const SALES_CSV = `Category,Amount,Region
 Software,1200,West
 Hardware,450,East
@@ -58,19 +47,19 @@ export const TEMPLATES: Template[] = [
     ],
     inputs: [{ alias: "data", columns: ["Category", "Amount"] }],
     samples: [{ alias: "data", filename: "sales.csv", csv: SALES_CSV }],
-    script: `${HELPER}
-def transform(inputs, params):
-    df = next(iter(inputs.values())).copy()
-    cat = _col(df, params.get("category_column", "Category"))
-    val = _col(df, params.get("value_column", "Amount"))
-    df[val] = pd.to_numeric(df[val], errors="coerce")
-    out = (df.groupby(cat, as_index=False)[val].sum()
-             .sort_values(val, ascending=False)
-             .rename(columns={val: "Total"}))
-    out["Total"] = out["Total"].round(2)
-    chart = plot_bar(out[cat].astype(str), out["Total"], title="Total by %s" % cat, ylabel="Total")
-    return {"tables": {"Summary": out}, "plots": {"Total by category": chart}}
-`,
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const cat = col(t, params.category_column ?? 'Category');
+  const val = col(t, params.value_column ?? 'Amount');
+  const out = t
+    .derive({ __v: aq.escape(d => parseNumber(d[val])) })
+    .groupby(cat)
+    .rollup({ Total: op.sum('__v') })
+    .orderby(aq.desc('Total'))
+    .derive({ Total: d => op.round(d.Total * 100) / 100 });
+  const chart = plotBar(out.array(cat), out.array('Total'), { title: 'Total by ' + cat, ylabel: 'Total' });
+  return { tables: { Summary: out }, plots: { 'Total by category': chart } };
+}`,
   },
   {
     slug: "top-n",
@@ -98,17 +87,18 @@ Tyrell,19500
 Hooli,8700
 Pied Piper,3100`,
     }],
-    script: `${HELPER}
-def transform(inputs, params):
-    df = next(iter(inputs.values())).copy()
-    val = _col(df, params.get("value_column", "Amount"))
-    n = max(1, int(params.get("top_n", 10)))
-    df[val] = pd.to_numeric(df[val], errors="coerce")
-    out = df.sort_values(val, ascending=False).head(n).reset_index(drop=True)
-    label = df.columns[0]
-    chart = plot_bar(out[label].astype(str), out[val], title="Top %d by %s" % (n, val))
-    return {"tables": {"Top %d" % n: out}, "plots": {"Top items": chart}}
-`,
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const val = col(t, params.value_column ?? 'Amount');
+  const n = Math.max(1, Math.floor(params.top_n ?? 10));
+  const out = t
+    .derive({ [val]: aq.escape(d => parseNumber(d[val])) })
+    .orderby(aq.desc(val))
+    .slice(0, n);
+  const label = t.columnNames()[0];
+  const chart = plotBar(out.array(label), out.array(val), { title: 'Top ' + n + ' by ' + val });
+  return { tables: { ['Top ' + n]: out }, plots: { 'Top items': chart } };
+}`,
   },
   {
     slug: "monthly-totals",
@@ -136,20 +126,20 @@ def transform(inputs, params):
 2026-05-22,1600,invoice
 2026-06-02,850,invoice`,
     }],
-    script: `${HELPER}
-def transform(inputs, params):
-    df = next(iter(inputs.values())).copy()
-    dcol = _col(df, params.get("date_column", "Date"))
-    vcol = _col(df, params.get("value_column", "Amount"))
-    df[dcol] = pd.to_datetime(df[dcol], errors="coerce")
-    df[vcol] = pd.to_numeric(df[vcol], errors="coerce")
-    df = df.dropna(subset=[dcol])
-    df["Month"] = df[dcol].dt.to_period("M").astype(str)
-    out = (df.groupby("Month", as_index=False)[vcol].sum().rename(columns={vcol: "Total"}))
-    out["Total"] = out["Total"].round(2)
-    chart = plot_line(out["Month"], out["Total"], title="Total by month", xlabel="Month", ylabel="Total")
-    return {"tables": {"By month": out}, "plots": {"Monthly total": chart}}
-`,
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const dcol = col(t, params.date_column ?? 'Date');
+  const vcol = col(t, params.value_column ?? 'Amount');
+  const out = t
+    .derive({ Month: aq.escape(d => yearMonth(d[dcol])), __v: aq.escape(d => parseNumber(d[vcol])) })
+    .filter(aq.escape(d => d.Month !== null))
+    .groupby('Month')
+    .rollup({ Total: op.sum('__v') })
+    .orderby('Month')
+    .derive({ Total: d => op.round(d.Total * 100) / 100 });
+  const chart = plotLine(out.array('Month'), out.array('Total'), { title: 'Total by month', xlabel: 'Month', ylabel: 'Total' });
+  return { tables: { 'By month': out }, plots: { 'Monthly total': chart } };
+}`,
   },
   {
     slug: "merge-two-files",
@@ -175,24 +165,19 @@ C-002,Globex,East
 C-003,Initech,West
 C-004,Umbrella,Central` },
     ],
-    script: `${HELPER}
-def transform(inputs, params):
-    main = inputs["main"].copy()
-    lookup = inputs["lookup"].copy()
-    key = params.get("key_column", "ID")
-    km = _col(main, key)
-    kl = _col(lookup, key)
-    merged = main.merge(lookup, left_on=km, right_on=kl, how="left", suffixes=("", " (lookup)"))
-    if kl != km and kl in merged.columns:
-        merged = merged.drop(columns=[kl])
-    extra = [c for c in lookup.columns if c != kl]
-    tables = {"Merged": merged}
-    if extra:
-        unmatched = merged[merged[extra[0]].isna()]
-        if len(unmatched):
-            tables["Unmatched rows"] = unmatched
-    return {"tables": tables, "plots": {}}
-`,
+    script: `function transform(inputs, params) {
+  const main = inputs.main, lookup = inputs.lookup;
+  const key = params.key_column ?? 'ID';
+  const km = col(main, key), kl = col(lookup, key);
+  const merged = main.join_left(lookup, [[km], [kl]]);
+  const extra = lookup.columnNames().filter(c => c !== kl);
+  const tables = { Merged: merged };
+  if (extra.length) {
+    const unmatched = merged.filter(aq.escape(d => d[extra[0]] === undefined || d[extra[0]] === null));
+    if (unmatched.numRows() > 0) tables['Unmatched rows'] = unmatched;
+  }
+  return { tables, plots: {} };
+}`,
   },
   {
     slug: "find-duplicates",
@@ -211,14 +196,16 @@ C-003,Carol,2026-02-14
 C-002,Bob B.,2026-03-02
 C-004,Dave,2026-03-10`,
     }],
-    script: `${HELPER}
-def transform(inputs, params):
-    df = next(iter(inputs.values())).copy()
-    key = _col(df, params.get("key_column", "ID"))
-    norm = df[key].astype(str).str.strip().str.lower()
-    dup = norm.duplicated(keep=False)
-    return {"tables": {"Duplicates": df[dup].sort_values(key), "Unique rows": df[~dup]}, "plots": {}}
-`,
+    script: `function transform(inputs, params) {
+  const t = inputs.data;
+  const key = col(t, params.key_column ?? 'ID');
+  const withNorm = t.derive({ __k: aq.escape(d => String(d[key] ?? '').trim().toLowerCase()) });
+  const counts = withNorm.groupby('__k').rollup({ __n: op.count() });
+  const joined = withNorm.join_left(counts, ['__k', '__k']);
+  const dups = joined.filter(d => d.__n > 1).orderby('__k').select(aq.not('__k', '__n'));
+  const uniq = joined.filter(d => d.__n === 1).select(aq.not('__k', '__n'));
+  return { tables: { Duplicates: dups, 'Unique rows': uniq }, plots: {} };
+}`,
   },
   {
     slug: "whats-missing",
@@ -243,17 +230,14 @@ INV-001,2026-02-01
 INV-003,2026-04-01
 INV-005,2026-06-01` },
     ],
-    script: `${HELPER}
-def transform(inputs, params):
-    a = inputs["list_a"].copy()
-    b = inputs["list_b"].copy()
-    key = params.get("key_column", "ID")
-    ka = _col(a, key)
-    kb = _col(b, key)
-    bset = set(b[kb].astype(str).str.strip().str.lower())
-    missing = a[~a[ka].astype(str).str.strip().str.lower().isin(bset)]
-    return {"tables": {"In list_a but not list_b": missing}, "plots": {}}
-`,
+    script: `function transform(inputs, params) {
+  const a = inputs.list_a, b = inputs.list_b;
+  const key = params.key_column ?? 'ID';
+  const ka = col(a, key), kb = col(b, key);
+  const bset = new Set(b.array(kb).map(v => String(v ?? '').trim().toLowerCase()));
+  const missing = a.filter(aq.escape(d => !bset.has(String(d[ka] ?? '').trim().toLowerCase())));
+  return { tables: { 'In list_a but not list_b': missing }, plots: {} };
+}`,
   },
 ];
 

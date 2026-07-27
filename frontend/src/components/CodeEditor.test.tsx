@@ -5,8 +5,8 @@ import { CodeEditor } from "./CodeEditor";
 function noop() {}
 
 describe("CodeEditor", () => {
-  it("keeps the source in an editable textarea and highlights Python tokens", () => {
-    const src = 'def transform(inputs, params):\n    return {"tables": {}}  # done';
+  it("keeps the source in an editable textarea and highlights JavaScript tokens", () => {
+    const src = "function transform(inputs, params) {\n  return { tables: {} }; // done\n}";
     const { container } = render(<CodeEditor value={src} onChange={noop} />);
 
     // The textarea is the source of truth and holds the raw code.
@@ -16,6 +16,6 @@ describe("CodeEditor", () => {
     const pre = container.querySelector(".code-editor-pre")!;
     expect(pre.querySelector(".token.keyword")).not.toBeNull();
     expect(pre.querySelector(".token.comment")).not.toBeNull();
-    expect(pre.textContent).toContain("def transform(inputs, params):");
+    expect(pre.textContent).toContain("function transform(inputs, params)");
   });
 });

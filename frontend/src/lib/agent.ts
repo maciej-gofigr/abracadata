@@ -2,10 +2,10 @@
 //
 // The backend (/api/generate) is a stateless per-turn oracle: each call returns
 // either tool calls to run or a final recipe. This module owns the loop —
-// executing tools in the Pyodide worker, feeding results/errors back, handling
+// executing tools in the data worker, feeding results/errors back, handling
 // clarifying questions, and bounding the whole thing. See docs/agent-harness-design.md.
 
-import { pyWorker } from "./pyodide";
+import { dataWorker } from "./worker";
 import type { RecipeParam, RecipeStep } from "../types";
 
 export interface AgentInputSchema {
@@ -163,14 +163,14 @@ async function executeTool(call: AgentToolCall, allowDataAccess: boolean): Promi
   try {
     if (call.name === "preview_rows") {
       if (!allowDataAccess) return { ok: false, error: "Data access is off; sample rows are unavailable." };
-      return await pyWorker.previewRows(String(i.alias ?? ""), Number(i.n) || 5);
+      return await dataWorker.previewRows(String(i.alias ?? ""), Number(i.n) || 5);
     }
     if (call.name === "column_profile") {
       if (!allowDataAccess) return { ok: false, error: "Data access is off; column profiles are unavailable." };
-      return await pyWorker.columnProfile(String(i.alias ?? ""), String(i.column ?? ""));
+      return await dataWorker.columnProfile(String(i.alias ?? ""), String(i.column ?? ""));
     }
     if (call.name === "run_recipe") {
-      return await pyWorker.runRecipeTest(
+      return await dataWorker.runRecipeTest(
         String(i.script ?? ""),
         (i.params as Record<string, unknown>) || {},
         allowDataAccess,

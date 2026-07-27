@@ -11,7 +11,7 @@ export interface NamedTable {
   preview: TablePreview;
 }
 
-/** A Plotly figure spec, built in Python and rendered by Plotly.js in the browser. */
+/** A Plotly figure spec, built by the recipe and rendered by Plotly.js in the browser. */
 export interface PlotlyFigure {
   data: unknown[];
   layout?: Record<string, unknown>;

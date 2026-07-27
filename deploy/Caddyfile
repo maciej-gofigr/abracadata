@@ -7,6 +7,17 @@
 {$DOMAIN::80} {
 	encode zstd gzip
 
+	# Security headers. Recipes are LLM/shared-authored JS run via new Function in
+	# a web worker; the worker also strips its own network primitives. `connect-src
+	# 'self'` is the defense-in-depth that stops a malicious shared recipe from
+	# exfiltrating the user's data to a third party. `script-src 'unsafe-eval'` is
+	# required by the recipe runtime AND by Arquero (both compile via Function).
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
 	# API — strip the /api prefix (backend routes are /generate, /recipes, …).
 	handle_path /api/* {
 		reverse_proxy backend:8000 {

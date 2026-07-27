@@ -10,7 +10,7 @@ const script = "import pandas as pd\n\ndef transform(inputs, params):\n    retur
 function noop() {}
 
 describe("RecipePanel", () => {
-  it("defaults to the Steps view and switches to Python on tab click", () => {
+  it("defaults to the Steps view and switches to Code on tab click", () => {
     render(
       <RecipePanel inputs={["orders"]} steps={steps} tables={["By segment"]} plots={[]} script={script} onScriptChange={noop} onDownload={noop} />,
     );
@@ -18,12 +18,12 @@ describe("RecipePanel", () => {
     expect(screen.getByText("Total revenue per segment")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Python" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Code" }));
     const code = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(code.value).toContain("def transform");
   });
 
-  it("shows only Python (no tabs) when there are no steps", () => {
+  it("shows only Code (no tabs) when there are no steps", () => {
     render(
       <RecipePanel inputs={["orders"]} steps={[]} tables={[]} plots={[]} script={script} onScriptChange={noop} onDownload={noop} />,
     );

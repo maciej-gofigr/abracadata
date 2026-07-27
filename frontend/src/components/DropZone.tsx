@@ -29,7 +29,7 @@ export function DropZone({ onFiles, label, hint, compact }: Props) {
       <input
         ref={inputRef}
         type="file"
-        accept=".csv,.xlsx,.xls,.py"
+        accept=".csv,.xlsx,.xls,.js"
         multiple
         hidden
         onChange={(e) => {
