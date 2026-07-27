@@ -1,6 +1,12 @@
-# Latest Ubuntu 24.04 ARM64 AMI, resolved from Canonical's public SSM parameter.
+# Latest Ubuntu 24.04 AMI from Canonical's public SSM parameter. Architecture
+# follows the instance type: Graviton families (t4g, m7g, c7g, …) end in "g"
+# after the family prefix -> arm64; everything else -> amd64.
+locals {
+  ubuntu_arch = endswith(split(".", var.instance_type)[0], "g") ? "arm64" : "amd64"
+}
+
 data "aws_ssm_parameter" "ubuntu" {
-  name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id"
+  name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/${local.ubuntu_arch}/hvm/ebs-gp3/ami-id"
 }
 
 resource "aws_instance" "app" {

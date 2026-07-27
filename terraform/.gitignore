@@ -10,4 +10,8 @@ crash.*.log
 terraform.tfvars
 *.auto.tfvars
 
+# Saved plan files (binary; may embed resource values).
+tfplan
+*.tfplan
+
 # Keep the provider lock file (.terraform.lock.hcl) committed for reproducible runs.

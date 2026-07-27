@@ -11,9 +11,9 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "ARM (Graviton) instance. t4g.small = 2 GB; t4g.micro (1 GB) is enough since we only pull images."
+  description = "EC2 instance type. The Ubuntu AMI architecture auto-follows this (Graviton 't*g*' families -> arm64, else amd64). t3.small = 2 GB amd64; t4g.small = 2 GB ARM."
   type        = string
-  default     = "t4g.small"
+  default     = "t3.small"
 }
 
 variable "root_volume_gb" {
