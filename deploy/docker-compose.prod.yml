@@ -16,6 +16,8 @@ services:
       # Unset/blank DOMAIN -> ":80" -> plain HTTP on the box's IP (no cert),
       # for smoke-testing before DNS. A real hostname -> Caddy auto-HTTPS.
       DOMAIN: ${DOMAIN:-:80}
+      # Canonical bare domain; when set, www.<APEX> 301-redirects to it.
+      APEX: ${APEX:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - caddy_data:/data      # persisted TLS certs

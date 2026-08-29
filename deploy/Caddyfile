@@ -1,9 +1,14 @@
 # Serves the SPA + prerendered SEO pages and reverse-proxies /api/* to the
-# backend. The site address is DOMAIN from the compose environment; when DOMAIN
-# is unset it falls back to `:80`, so Caddy serves plain HTTP on the box's raw
-# IP with no cert — handy for smoke-testing on EC2 before DNS exists. Set DOMAIN
-# to a real hostname and Caddy auto-provisions HTTPS. (No contact email by
-# default; add a `{ email you@example.com }` global block for expiry notices.)
+# backend.
+#
+# Runtime env (from the compose .env):
+#   DOMAIN — the site address(es). Unset -> ":80", so Caddy serves plain HTTP on
+#            the box's raw IP with no cert (smoke-testing before DNS). For a real
+#            site, list EVERY hostname: "abracadata.me, www.abracadata.me".
+#   APEX   — the canonical bare domain (e.g. "abracadata.me"). When set, requests
+#            to www.<APEX> get a 301 to it. Unset -> the matcher never matches, so
+#            the ":80" fallback still works unchanged.
+#   ACME_EMAIL — optional Let's Encrypt contact for expiry notices.
 {$DOMAIN::80} {
 	encode zstd gzip
 
@@ -16,6 +21,12 @@
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Canonicalize www -> apex. No-op unless APEX is set (default host never matches).
+	@www host www.{$APEX:none.invalid}
+	handle @www {
+		redir https://{$APEX:none.invalid}{uri} permanent
 	}
 
 	# API — strip the /api prefix (backend routes are /generate, /recipes, …).
