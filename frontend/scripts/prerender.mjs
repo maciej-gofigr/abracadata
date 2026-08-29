@@ -36,7 +36,7 @@ function page(title, description, bodyHtml) {
     `<meta property="og:title" content="${esc(title)}">` +
     `<meta property="og:description" content="${esc(description)}">` +
     `<meta property="og:type" content="website">` +
-    `<meta property="og:site_name" content="Prestidata">` +
+    `<meta property="og:site_name" content="Abracadata">` +
     `<meta name="twitter:card" content="summary">`;
   html = html.replace("</head>", og + "</head>");
   html = html.replace('<div id="root"></div>', `<div id="root"></div><noscript>${bodyHtml}</noscript>`);
@@ -47,19 +47,19 @@ for (const t of templates) {
   const body =
     `<main><h1>${esc(t.name)}</h1><p>${esc(t.description)}</p>` +
     `<p>${esc(t.category)} template · runs entirely in your browser — your data never leaves your machine.</p>` +
-    `<p><a href="/">Prestidata</a> — describe a spreadsheet chore once, re-run it forever.</p></main>`;
+    `<p><a href="/">Abracadata</a> — describe a spreadsheet chore once, re-run it forever.</p></main>`;
   const dir = join(dist, "t", t.slug);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "index.html"), page(`${t.name} — Prestidata`, t.description, body));
+  writeFileSync(join(dir, "index.html"), page(`${t.name} — Abracadata`, t.description, body));
 }
 
 const galleryBody =
-  `<main><h1>Prestidata templates</h1><ul>` +
+  `<main><h1>Abracadata templates</h1><ul>` +
   templates.map((t) => `<li><a href="/t/${t.slug}">${esc(t.name)}</a> — ${esc(t.description)}</li>`).join("") +
   `</ul></main>`;
 const galleryDesc =
   "Ready-made spreadsheet recipes: total by category, top N, monthly totals, merge files, find duplicates, reconcile two lists. Pick one, drop your file, get results. Runs in your browser.";
 mkdirSync(join(dist, "templates"), { recursive: true });
-writeFileSync(join(dist, "templates", "index.html"), page("Templates — Prestidata", galleryDesc, galleryBody));
+writeFileSync(join(dist, "templates", "index.html"), page("Templates — Abracadata", galleryDesc, galleryBody));
 
 console.log(`prerender: wrote ${templates.length} template pages + /templates gallery`);

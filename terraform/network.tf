@@ -16,7 +16,7 @@ locals {
 
 resource "aws_security_group" "app" {
   name        = "${var.project}-app"
-  description = "Prestidata: HTTP/HTTPS in, everything out. SSH optional."
+  description = "Abracadata: HTTP/HTTPS in, everything out. SSH optional."
   vpc_id      = data.aws_vpc.default.id
 
   ingress {

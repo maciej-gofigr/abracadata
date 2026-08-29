@@ -1,11 +1,11 @@
-# Deploying Prestidata (POC, single EC2 box)
+# Deploying Abracadata (POC, single EC2 box)
 
 A deliberately cheap POC: **one small EC2 instance** running Docker Compose —
 Caddy (auto-HTTPS + static + `/api` proxy), the FastAPI backend, and Postgres —
 with images built in **CI (GHCR)** and pulled by the box. No ECS/ALB/RDS.
 
-Why it's so cheap: the heavy work (Pyodide/pandas) runs in the **browser**, and
-file data never touches the server. The box is a thin API proxy + static host +
+Why it's so cheap: the recipe engine (Arquero/JS) runs entirely in the
+**browser**, and file data never touches the server. The box is a thin API proxy + static host +
 small DB. Est. **~$8–15/mo** infra + Bedrock per-token usage.
 
 ```
@@ -72,7 +72,7 @@ Open a keyless shell with the `ssm_command` output, then run the `bring_up`
 command (also printed by Terraform):
 ```sh
 aws ssm start-session --target <instance-id>          # = ssm_command output
-sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/prestidata/main/deploy/box-setup.sh | bash'
+sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/abracadata/main/deploy/box-setup.sh | bash'
 ```
 `deploy/box-setup.sh` is idempotent: it fetches `docker-compose.prod.yml`, seeds
 `/opt/prestidata/.env` on first run (random DB password, `DOMAIN` blank, correct
@@ -88,7 +88,7 @@ Visit the `app_url_http` URL. Verify Bedrock by generating a recipe, or:
 CI pushes new images on merge to `main`. Then on the box, just re-run the
 bring-up script (or the lighter `update.sh`):
 ```sh
-sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/prestidata/main/deploy/box-setup.sh | bash'
+sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/abracadata/main/deploy/box-setup.sh | bash'
 ```
 (Optionally automate later with an SSM `SendCommand` step in CI, or a webhook.)
 

@@ -1,4 +1,4 @@
-# Prestidata
+# Abracadata
 
 > **Describe your spreadsheet work once. Rerun it forever — like magic.** (The product name lives in [`frontend/src/branding.ts`](frontend/src/branding.ts).)
 

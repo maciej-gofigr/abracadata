@@ -25,5 +25,5 @@ output "ssh_command" {
 
 output "bring_up" {
   description = "Run this on the box (via ssm_command) to deploy the app."
-  value       = "sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/prestidata/main/deploy/box-setup.sh | bash'"
+  value       = "sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/abracadata/main/deploy/box-setup.sh | bash'"
 }

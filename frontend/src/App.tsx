@@ -123,7 +123,7 @@ export function App() {
       void getSharedRecipe(decodeURIComponent(shared[1]))
         .then((s) => {
           setApplyState({ recipe: applyRecipeFromShared(s), mode: "shared" });
-          setMeta(`${s.name} — ${APP_NAME}`, "A shared Prestidata recipe — drop your files and run it.");
+          setMeta(`${s.name} — ${APP_NAME}`, "A shared Abracadata recipe — drop your files and run it.");
         })
         .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
     } else if (tpl) {

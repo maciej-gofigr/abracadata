@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Deploy (or update) Prestidata on the box. Idempotent — safe to re-run.
+# Deploy (or update) Abracadata on the box. Idempotent — safe to re-run.
 # Terraform provisions the box and installs Docker; THIS runs the app on it.
 #
 # Run over SSM (`aws ssm start-session --target <id>`) or SSH, then:
-#   sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/prestidata/main/deploy/box-setup.sh | bash'
+#   sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/abracadata/main/deploy/box-setup.sh | bash'
 # or copy this file up and: sudo bash box-setup.sh
 #
 # Overridable via env: REPO, IMAGE_REPO, APP_DIR, AWS_REGION.
 set -euo pipefail
 
-REPO="${REPO:-maciej-gofigr/prestidata}"
+REPO="${REPO:-maciej-gofigr/abracadata}"
 RAW="https://raw.githubusercontent.com/${REPO}/main"
 APP_DIR="${APP_DIR:-/opt/prestidata}"
 IMAGE_REPO="${IMAGE_REPO:-ghcr.io/${REPO%%/*}}"   # e.g. ghcr.io/maciej-gofigr

@@ -1,6 +1,6 @@
 # gitleaks config. Runs on every commit via .githooks/pre-commit and can be run
 # manually:  gitleaks git   (history)  /  gitleaks dir .  (working tree)
-title = "prestidata gitleaks"
+title = "abracadata gitleaks"
 
 # Start from gitleaks' built-in rule set (AWS keys, generic API keys, tokens, …).
 [extend]
