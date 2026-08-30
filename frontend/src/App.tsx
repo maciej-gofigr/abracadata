@@ -822,10 +822,13 @@ export function App() {
     <>
       <div className="topbar">
         <div className="brand">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="5" fill="var(--accent-tint)" stroke="var(--accent)" strokeWidth="1.5" />
-            <path d="M7 8.5h6M7 12h10M7 15.5h7" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
-            <circle cx="17.5" cy="8.5" r="1.4" fill="var(--accent)" />
+          {/* "Framed" mark: a rounded tile of data cells, one turned to a gold spark */}
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true" shapeRendering="geometricPrecision">
+            <rect x="3.4" y="3.4" width="25.2" height="25.2" rx="7" fill="var(--accent-tint)" stroke="var(--accent)" strokeWidth="1.7" />
+            <rect x="8" y="8" width="6.4" height="6.4" rx="1.6" fill="var(--accent)" />
+            <rect x="8" y="17.6" width="6.4" height="6.4" rx="1.6" fill="var(--accent)" />
+            <rect x="17.6" y="17.6" width="6.4" height="6.4" rx="1.6" fill="var(--accent)" />
+            <path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="var(--spark)" stroke="var(--spark)" strokeWidth="0.35" strokeLinejoin="round" />
           </svg>
           <span>{APP_NAME}</span>
         </div>
