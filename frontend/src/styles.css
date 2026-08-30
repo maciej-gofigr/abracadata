@@ -1,54 +1,65 @@
 * { box-sizing: border-box; }
 
+/* Palette — "Alchemical": violet (brand 1, the working accent) + antique gold
+   (brand 2, the sparing "spark"), on per-theme neutrals — warm parchment in
+   light, violet-black midnight in dark. Every color is a token; components never
+   hardcode a hue. --on-accent is text/fill that sits on a saturated brand fill
+   (white in light; dark ink in dark, where the accent turns luminous). */
 :root {
-  --ground: #fbfaf8;
+  --ground: #faf8f4;
   --surface: #ffffff;
-  --surface-2: #f5f3ef;
-  --ink: #1c1b22;
-  --muted: #6b6a78;
-  --faint: #9c9aa6;
-  --line: #eae7e1;
-  --line-strong: #ded9d0;
-  --accent: #5b5bd6;
-  --accent-press: #4a4ac4;
-  --accent-tint: #eeeefb;
-  --add: #2f9e68;
-  --add-tint: #e7f4ec;
-  --remove: #c6537a;
-  --remove-tint: #f9eaf0;
-  --error-bg: #fdf0ef;
-  --error-border: #e6b3ad;
-  --shadow: 0 1px 2px rgba(28, 27, 34, 0.04), 0 8px 24px rgba(28, 27, 34, 0.06);
+  --surface-2: #f3efe9;
+  --ink: #211c2b;
+  --muted: #6b6478;
+  --faint: #9c95a7;
+  --line: #ece7de;
+  --line-strong: #ddd6ca;
+  --accent: #6a2cd4;
+  --accent-press: #571ebd;
+  --accent-tint: #f0e9fd;
+  --on-accent: #ffffff;
+  --spark: #c47d10;
+  --spark-tint: #fbedcd;
+  --add: #1f9e6a;
+  --add-tint: #e3f4ec;
+  --remove: #c93f6b;
+  --remove-tint: #fbe8f0;
+  --error-bg: #fceef1;
+  --error-border: #e7b1c0;
+  --shadow: 0 1px 2px rgba(33, 28, 43, 0.05), 0 10px 30px rgba(33, 28, 43, 0.07);
   --radius: 12px;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --grid: rgba(28, 27, 34, 0.1);
+  --grid: rgba(33, 28, 43, 0.1);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #151419; --surface: #1e1d24; --surface-2: #26242d;
-    --ink: #eceaf2; --muted: #a09eac; --faint: #726f7e;
-    --line: #2c2a34; --line-strong: #383641;
-    --accent: #8a8af0; --accent-press: #9c9cf5; --accent-tint: #23223a;
-    --add: #5fcb92; --add-tint: #16281f; --remove: #e58aae; --remove-tint: #2b1a22;
-    --error-bg: #2b1a1a; --error-border: #5a2f2f;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
-    --grid: rgba(236, 234, 242, 0.12);
+  :root:not([data-theme="light"]) {
+    --ground: #131019; --surface: #1b1725; --surface-2: #241e30;
+    --ink: #ece8f4; --muted: #a39bb4; --faint: #6f6880;
+    --line: #2b2537; --line-strong: #3a3248;
+    --accent: #a685ff; --accent-press: #b89dff; --accent-tint: #251d3a; --on-accent: #191323;
+    --spark: #f2b53d; --spark-tint: #2c2210;
+    --add: #4fcf94; --add-tint: #10281d; --remove: #ec7ba6; --remove-tint: #2c1622;
+    --error-bg: #2a1620; --error-border: #5a2f42;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.45);
+    --grid: rgba(236, 232, 244, 0.12);
   }
 }
 :root[data-theme="light"] {
-  --ground: #fbfaf8; --surface: #fff; --surface-2: #f5f3ef; --ink: #1c1b22; --muted: #6b6a78;
-  --faint: #9c9aa6; --line: #eae7e1; --line-strong: #ded9d0; --accent: #5b5bd6; --accent-press: #4a4ac4;
-  --accent-tint: #eeeefb; --add: #2f9e68; --add-tint: #e7f4ec; --remove: #c6537a; --remove-tint: #f9eaf0;
-  --error-bg: #fdf0ef; --error-border: #e6b3ad; --grid: rgba(28, 27, 34, 0.1);
-  --shadow: 0 1px 2px rgba(28, 27, 34, 0.04), 0 8px 24px rgba(28, 27, 34, 0.06);
+  --ground: #faf8f4; --surface: #ffffff; --surface-2: #f3efe9; --ink: #211c2b; --muted: #6b6478;
+  --faint: #9c95a7; --line: #ece7de; --line-strong: #ddd6ca; --accent: #6a2cd4; --accent-press: #571ebd;
+  --accent-tint: #f0e9fd; --on-accent: #ffffff; --spark: #c47d10; --spark-tint: #fbedcd;
+  --add: #1f9e6a; --add-tint: #e3f4ec; --remove: #c93f6b; --remove-tint: #fbe8f0;
+  --error-bg: #fceef1; --error-border: #e7b1c0; --grid: rgba(33, 28, 43, 0.1);
+  --shadow: 0 1px 2px rgba(33, 28, 43, 0.05), 0 10px 30px rgba(33, 28, 43, 0.07);
 }
 :root[data-theme="dark"] {
-  --ground: #151419; --surface: #1e1d24; --surface-2: #26242d; --ink: #eceaf2; --muted: #a09eac;
-  --faint: #726f7e; --line: #2c2a34; --line-strong: #383641; --accent: #8a8af0; --accent-press: #9c9cf5;
-  --accent-tint: #23223a; --add: #5fcb92; --add-tint: #16281f; --remove: #e58aae; --remove-tint: #2b1a22;
-  --error-bg: #2b1a1a; --error-border: #5a2f2f; --grid: rgba(236, 234, 242, 0.12);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --ground: #131019; --surface: #1b1725; --surface-2: #241e30; --ink: #ece8f4; --muted: #a39bb4;
+  --faint: #6f6880; --line: #2b2537; --line-strong: #3a3248; --accent: #a685ff; --accent-press: #b89dff;
+  --accent-tint: #251d3a; --on-accent: #191323; --spark: #f2b53d; --spark-tint: #2c2210;
+  --add: #4fcf94; --add-tint: #10281d; --remove: #ec7ba6; --remove-tint: #2c1622;
+  --error-bg: #2a1620; --error-border: #5a2f42; --grid: rgba(236, 232, 244, 0.12);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 body {
@@ -56,7 +67,7 @@ body {
   font-family: var(--ui); font-size: 15px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
-::selection { background: var(--accent-tint); }
+::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 button { font-family: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
@@ -67,7 +78,7 @@ button { font-family: inherit; cursor: pointer; }
   position: sticky; top: 0; z-index: 20;
   background: color-mix(in srgb, var(--ground) 86%, transparent); backdrop-filter: blur(10px);
 }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 640; letter-spacing: -0.01em; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 680; letter-spacing: -0.02em; font-size: 15.5px; }
 .brand .tag { color: var(--faint); font-weight: 500; font-size: 13px; }
 .spacer { flex: 1; }
 .chip {
@@ -83,11 +94,11 @@ button { font-family: inherit; cursor: pointer; }
   transition: background 0.15s, border-color 0.15s, transform 0.05s;
 }
 .btn .spinner { width: 13px; height: 13px; }
-.btn.primary .spinner, .btn.danger .spinner { border-color: rgba(255, 255, 255, 0.45); border-top-color: #fff; }
+.btn.primary .spinner, .btn.danger .spinner { border-color: color-mix(in srgb, var(--on-accent) 45%, transparent); border-top-color: var(--on-accent); }
 .btn:hover:not(:disabled) { background: var(--surface-2); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: default; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-press); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
 .btn.ghost:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
@@ -124,7 +135,7 @@ main { padding: clamp(16px, 3vw, 32px) clamp(16px, 4vw, 40px) 72px; max-width: 1
 
 /* landing */
 .landing { max-width: 760px; margin: min(6vh, 56px) auto 0; }
-.eyebrow { font-size: 12px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--accent); font-weight: 640; margin-bottom: 16px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--spark); font-weight: 700; margin-bottom: 16px; }
 h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.07; letter-spacing: -0.025em; margin: 0 0 16px; text-wrap: balance; font-weight: 700; }
 h1 em { font-style: normal; color: var(--accent); }
 .lede { font-size: clamp(15px, 2.2vw, 18px); color: var(--muted); max-width: 60ch; margin: 0 0 28px; }
@@ -287,7 +298,7 @@ tbody tr:last-child td { border-bottom: none; }
   max-width: 86%; padding: 9px 13px; border-radius: 14px; font-size: 14px;
   line-height: 1.45; white-space: pre-wrap; word-break: break-word;
 }
-.chat-user .chat-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.chat-user .chat-bubble { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
 .chat-assistant .chat-bubble { background: var(--surface-2); color: var(--ink); border-bottom-left-radius: 4px; }
 /* the live in-progress turn hosts the activity trace + streaming text as-is */
 .chat-bubble.chat-live { background: transparent; padding: 0; max-width: 100%; }
@@ -316,7 +327,7 @@ tbody tr:last-child td { border-bottom: none; }
   background: var(--ground); border: 1px solid var(--line); border-radius: 10px;
 }
 .flow-num {
-  flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+  flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
   font-size: 12px; font-weight: 700; display: grid; place-items: center; margin-top: 1px;
 }
 .flow-step-title { font-size: 14px; font-weight: 550; color: var(--ink); }
@@ -413,7 +424,7 @@ tbody tr:last-child td { border-bottom: none; }
 /* empty state so the app surface reads as an app from the get-go */
 .app-empty { flex: 1 1 auto; display: grid; place-items: center; min-height: 300px; text-align: center; padding: 24px; }
 .app-empty-inner { max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.app-empty-icon { font-size: 30px; color: var(--faint); opacity: 0.55; }
+.app-empty-icon { font-size: 30px; color: var(--spark); opacity: 0.85; }
 .app-empty-title { font-size: 15px; font-weight: 600; color: var(--ink); }
 .app-empty .muted { font-size: 13px; line-height: 1.5; margin: 0; }
 /* recipe panel: step-flow / Python as tabs of one card */
@@ -462,7 +473,7 @@ tbody tr:last-child td { border-bottom: none; }
 .rename-input:focus { outline: none; }
 .icon-btn.sm { width: 30px; height: 30px; }
 .icon-btn.danger:hover { color: var(--remove); border-color: var(--remove); background: var(--remove-tint); }
-.btn.danger { border-color: var(--remove); background: var(--remove); color: #fff; }
+.btn.danger { border-color: var(--remove); background: var(--remove); color: var(--on-accent); }
 .btn.danger:hover:not(:disabled) { filter: brightness(0.95); }
 .confirm-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 9px 11px; background: var(--remove-tint); border: 1px solid var(--remove); border-radius: 9px; font-size: 13px; }
 .confirm-row span { flex: 1; }
