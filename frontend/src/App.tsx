@@ -899,6 +899,16 @@ export function App() {
 
         {!legalDoc && !applyState && !showGallery && !hasInputs && (
           <section className="landing">
+            <div className="brand-hero">
+              <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" shapeRendering="geometricPrecision">
+                <rect x="3.4" y="3.4" width="25.2" height="25.2" rx="7" fill="var(--accent-tint)" stroke="var(--accent)" strokeWidth="1.7" />
+                <rect x="8" y="8" width="6.4" height="6.4" rx="1.6" fill="var(--accent)" />
+                <rect x="8" y="17.6" width="6.4" height="6.4" rx="1.6" fill="var(--accent)" />
+                <rect x="17.6" y="17.6" width="6.4" height="6.4" rx="1.6" fill="var(--accent)" />
+                <path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="var(--spark)" stroke="var(--spark)" strokeWidth="0.35" strokeLinejoin="round" />
+              </svg>
+              <span className="brand-hero-name">{APP_NAME}</span>
+            </div>
             <div className="eyebrow">For the spreadsheet you rebuild every month</div>
             <h1>Describe it once. <em>Re-run it forever.</em></h1>
             <p className="lede">

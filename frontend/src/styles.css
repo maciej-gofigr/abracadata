@@ -585,3 +585,14 @@ tbody tr:last-child td { border-bottom: none; }
 .site-footer a:hover { color: var(--ink); text-decoration: underline; }
 .site-footer .foot-copy { margin-left: auto; color: var(--faint); }
 @media (max-width: 480px) { .site-footer .foot-copy { margin-left: 0; width: 100%; } }
+
+/* prominent brand lockup on the landing hero (topbar keeps the compact one).
+   Small gap under the logo ties the slogan to it; the larger gap under the
+   slogan sets the whole brand group apart from the headline. */
+.brand-hero { display: flex; align-items: center; gap: 15px; margin-bottom: 16px; }
+/* mark + wordmark scale to be at least as large as the h1 headline below
+   (h1 is clamp(30px, 5.2vw, 48px)); the mark runs a touch taller than the text */
+.brand-hero svg { width: clamp(52px, 8.6vw, 60px); height: clamp(52px, 8.6vw, 60px); flex: none; }
+.brand-hero-name { font-weight: 800; font-size: clamp(32px, 5.6vw, 50px); letter-spacing: -0.03em; color: var(--ink); line-height: 1; }
+.landing .eyebrow { margin-bottom: 40px; }
+
