@@ -10,18 +10,31 @@ export function prettify(name: string): string {
 
 /** Translate an error's last line into plain, actionable language. */
 export function friendlyRunError(trace: string): string {
-  const last = trace.trim().split("\n").filter(Boolean).pop() ?? trace;
+  // JS errors put the message on the FIRST line and stack frames after, so take
+  // the first non-frame line (a bare stack frame is never a useful message).
+  const lines = trace.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+  const msg = lines.find((l) => !l.startsWith("at ")) ?? lines[0] ?? trace;
   let m: RegExpMatchArray | null;
-  if ((m = last.match(/KeyError:\s*['"]?([^'"]+)/))) {
+
+  // The runtime's col() resolver: name the column AND list what's available.
+  if ((m = msg.match(/Column "([^"]+)" not found\.\s*Columns:\s*(.+)$/))) {
+    const cols = m[2].split(",").map((c) => c.trim()).filter(Boolean);
+    const shown = cols.slice(0, 8).map((c) => `“${c}”`).join(", ");
+    const more = cols.length > 8 ? `, and ${cols.length - 8} more` : "";
+    return `This file has no column named “${m[1]}”. Use the settings above to pick one of its actual columns: ${shown}${more}.`;
+  }
+  if ((m = msg.match(/KeyError:\s*['"]?([^'"]+)/))) {
     return `The recipe looked for “${m[1]}” but couldn't find it — a column may be named differently in this file, or a file was dropped into the wrong slot.`;
   }
-  if (last.includes("No input files loaded")) return "Drop your files first, then the recipe will run.";
-  if ((m = last.match(/No output table named ['"]?([^'"]+)/))) return `The recipe didn't produce a “${m[1]}” table.`;
-  if (last.includes("produced no output tables")) return "The recipe finished but produced no table to show.";
-  if (last.match(/(ValueError|TypeError|AttributeError|MergeError):/)) {
-    return `${last.replace(/^\w+Error:\s*/, "")} — this usually means the data looks different from what the recipe expects.`;
+  if (msg.includes("No input files loaded")) return "Drop your files first, then the recipe will run.";
+  if ((m = msg.match(/No output table named ['"]?([^'"]+)/))) return `The recipe didn't produce a “${m[1]}” table.`;
+  if (msg.includes("at least one table") || msg.includes("produced no output tables")) {
+    return "The recipe finished but produced no table to show.";
   }
-  return last;
+  if ((m = msg.match(/(?:\w*Error):\s*(.+)$/))) {
+    return `${m[1]} — this usually means the data looks different from what the recipe expects.`;
+  }
+  return msg;
 }
 
 function formatValue(p: RecipeParam, value: unknown): string {

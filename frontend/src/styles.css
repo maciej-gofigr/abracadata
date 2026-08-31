@@ -596,3 +596,5 @@ tbody tr:last-child td { border-bottom: none; }
 .brand-hero-name { font-weight: 800; font-size: clamp(32px, 5.6vw, 50px); letter-spacing: -0.03em; color: var(--ink); line-height: 1; }
 .landing .eyebrow { margin-bottom: 40px; }
 
+/* a choice param whose saved value isn't a column in the dropped file */
+.param select.param-missing { border-color: var(--remove); background: var(--remove-tint); color: var(--ink); }

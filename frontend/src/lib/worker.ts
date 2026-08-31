@@ -9,26 +9,33 @@ interface Pending {
 // runtime + parsed inputs. Same method surface the app has always used; only the
 // engine underneath changed (Arquero/JS instead of Pyodide/pandas).
 class DataWorker {
-  private worker = new Worker(new URL("./jsWorker.ts", import.meta.url), { type: "module" });
+  // Spawned lazily on first use, not at import time: pages that never touch data
+  // (e.g. /terms) shouldn't start a worker, and importing a component that uses
+  // this module must not require a Worker to exist (tests, SSR/prerender).
+  private worker: Worker | null = null;
   private seq = 0;
   private pending = new Map<number, Pending>();
 
-  constructor() {
-    this.worker.onmessage = (e: MessageEvent) => {
-      const { id, ok, payload, error } = e.data;
-      const p = this.pending.get(id);
-      if (!p) return;
-      this.pending.delete(id);
-      if (ok) p.resolve(payload);
-      else p.reject(new Error(error));
-    };
+  private get w(): Worker {
+    if (!this.worker) {
+      this.worker = new Worker(new URL("./jsWorker.ts", import.meta.url), { type: "module" });
+      this.worker.onmessage = (e: MessageEvent) => {
+        const { id, ok, payload, error } = e.data;
+        const p = this.pending.get(id);
+        if (!p) return;
+        this.pending.delete(id);
+        if (ok) p.resolve(payload);
+        else p.reject(new Error(error));
+      };
+    }
+    return this.worker;
   }
 
   private call<T>(msg: Record<string, unknown>, transfer: Transferable[] = []): Promise<T> {
     const id = ++this.seq;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.worker.postMessage({ id, ...msg }, transfer);
+      this.w.postMessage({ id, ...msg }, transfer);
     });
   }
 

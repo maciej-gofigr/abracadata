@@ -80,20 +80,46 @@ export function ParamControl({
   const isChoice = param.type === "enum" || !!param.source;
   const choiceOptions = options ?? param.options ?? [];
   const listId = `opts-${param.name}`;
+  const current = String(value ?? "");
+  // Match the runtime's case-insensitive column resolution, so a default of
+  // "Amount" is recognized as the file's "amount" and isn't flagged as missing.
+  const matched = choiceOptions.find((o) => o.trim().toLowerCase() === current.trim().toLowerCase());
+  const isMissing = isChoice && choiceOptions.length > 0 && current !== "" && !matched;
+  const [freeForm, setFreeForm] = useState(false);
+
   return (
     <label className="param">
       <span className="param-label">
         {param.label}
         {param.help && <span className="param-help"> — {param.help}</span>}
       </span>
-      {isChoice ? (
+      {isChoice && choiceOptions.length > 0 && !freeForm ? (
+        // A real <select> so the choices are visibly discoverable (a bare
+        // datalist looks identical to a text box). "Other…" keeps free-form entry.
+        <select
+          className={isMissing ? "param-missing" : undefined}
+          value={matched ?? (current === "" ? "" : "__missing__")}
+          onChange={(e) => {
+            if (e.target.value === "__other__") { setFreeForm(true); return; }
+            onChange(e.target.value);
+          }}
+        >
+          {current === "" && <option value="">Choose…</option>}
+          {isMissing && <option value="__missing__">{current} — not in this file</option>}
+          {choiceOptions.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+          <option value="__other__">Other…</option>
+        </select>
+      ) : isChoice ? (
         <>
           <input
             className="combobox-input"
             list={listId}
-            value={String(value)}
+            value={current}
             placeholder={choiceOptions.length ? "Type or pick…" : "Type a value…"}
             onChange={(e) => onChange(e.target.value)}
+            onBlur={() => { if (choiceOptions.length && current === "") setFreeForm(false); }}
           />
           <datalist id={listId}>
             {choiceOptions.map((o) => (
