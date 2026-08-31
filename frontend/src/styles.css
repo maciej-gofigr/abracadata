@@ -557,3 +557,31 @@ tbody tr:last-child td { border-bottom: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* legal pages (terms / privacy) — readable article in the Grimoire style */
+.legal { max-width: 760px; margin: 6px auto 0; }
+.legal-back { display: inline-block; margin-bottom: 20px; font-size: 13.5px; }
+.legal-body { font-size: 15px; line-height: 1.65; color: var(--ink); }
+.legal-body > h1 { font-family: var(--display); font-weight: 600; font-size: clamp(28px, 4.5vw, 40px); letter-spacing: -0.02em; line-height: 1.08; margin: 4px 0 6px; text-wrap: balance; }
+.legal-body h2 { font-family: var(--display); font-weight: 600; font-size: 22px; letter-spacing: -0.005em; margin: 36px 0 10px; }
+.legal-body h3 { font-weight: 700; font-size: 15px; margin: 22px 0 4px; color: var(--ink); }
+.legal-body p { margin: 0 0 14px; }
+.legal-body ul { margin: 0 0 16px; padding-left: 22px; }
+.legal-body li { margin: 0 0 8px; }
+.legal-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.legal-body strong { font-weight: 700; }
+.legal-body em { font-style: italic; }
+.legal-body hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+.legal-body > p:first-of-type { color: var(--muted); font-size: 13.5px; margin-top: 0; }
+
+/* site footer */
+.site-footer {
+  max-width: 1280px; margin: 48px auto 0; padding: 22px clamp(16px, 4vw, 40px) 44px;
+  border-top: 1px solid var(--line); display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  font-size: 13px; color: var(--muted);
+}
+.site-footer .foot-brand { font-weight: 700; color: var(--ink); }
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover { color: var(--ink); text-decoration: underline; }
+.site-footer .foot-copy { margin-left: auto; color: var(--faint); }
+@media (max-width: 480px) { .site-footer .foot-copy { margin-left: 0; width: 100%; } }

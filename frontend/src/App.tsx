@@ -38,6 +38,7 @@ import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./c
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
 import { RecipePanel } from "./components/RecipePanel";
+import { LegalView } from "./components/LegalView";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
 import type { InputFile, RecipeMeta, RecipeParam, RecipeStep, RunResult } from "./types";
 
@@ -93,6 +94,7 @@ export function App() {
 
   const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared" | "template"; recipeId?: string } | null>(null);
   const [showGallery, setShowGallery] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<"terms" | "privacy" | null>(null);
   const [sharePanelId, setSharePanelId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -118,7 +120,19 @@ export function App() {
   function applyRoute(path: string) {
     const shared = path.match(/^\/s\/([^/]+)/);
     const tpl = path.match(/^\/t\/([^/]+)/);
-    if (shared) {
+    if (path === "/terms" || path === "/privacy") {
+      const d = path === "/terms" ? "terms" : "privacy";
+      setApplyState(null);
+      setShowGallery(false);
+      setLegalDoc(d);
+      setMeta(
+        `${d === "terms" ? "Terms of Use" : "Privacy Policy"} — ${APP_NAME}`,
+        d === "terms"
+          ? "The terms governing use of Abracadata."
+          : "How Abracadata handles your information — your files never leave your browser.",
+      );
+    } else if (shared) {
+      setLegalDoc(null);
       setShowGallery(false);
       void getSharedRecipe(decodeURIComponent(shared[1]))
         .then((s) => {
@@ -127,6 +141,7 @@ export function App() {
         })
         .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
     } else if (tpl) {
+      setLegalDoc(null);
       const t = templateBySlug(decodeURIComponent(tpl[1]));
       setShowGallery(false);
       if (t) {
@@ -136,14 +151,23 @@ export function App() {
         setApplyState(null);
       }
     } else if (path === "/templates") {
+      setLegalDoc(null);
       setApplyState(null);
       setShowGallery(true);
       setMeta(`Templates — ${APP_NAME}`, GALLERY_DESC);
     } else {
+      setLegalDoc(null);
       setApplyState(null);
       setShowGallery(false);
       setMeta(APP_NAME, APP_TAGLINE);
     }
+  }
+
+  // Client-side nav for in-app links (footer, back links).
+  function navTo(path: string) {
+    window.history.pushState({}, "", path);
+    applyRoute(path);
+    window.scrollTo({ top: 0 });
   }
 
   async function refreshLibrary() {
@@ -857,7 +881,9 @@ export function App() {
       {AUTH_ENABLED && authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSignedIn={onSignedIn} />}
 
       <main>
-        {applyState && (
+        {legalDoc && <LegalView doc={legalDoc} onHome={() => navTo("/")} />}
+
+        {!legalDoc && applyState && (
           <ApplyView
             recipe={applyState.recipe}
             mode={applyState.mode}
@@ -867,11 +893,11 @@ export function App() {
           />
         )}
 
-        {!applyState && showGallery && (
+        {!legalDoc && !applyState && showGallery && (
           <GalleryPage onOpen={openTemplate} onHome={exitApply} />
         )}
 
-        {!applyState && !showGallery && !hasInputs && (
+        {!legalDoc && !applyState && !showGallery && !hasInputs && (
           <section className="landing">
             <div className="eyebrow">For the spreadsheet you rebuild every month</div>
             <h1>Describe it once. <em>Re-run it forever.</em></h1>
@@ -938,7 +964,7 @@ export function App() {
           </section>
         )}
 
-        {!applyState && !showGallery && hasInputs && (
+        {!legalDoc && !applyState && !showGallery && hasInputs && (
           <>
             <div className="header-row">
               <h2 className="page-title">{currentRecipeName || "Untitled recipe"}</h2>
@@ -1230,6 +1256,13 @@ export function App() {
           </>
         )}
       </main>
+
+      <footer className="site-footer">
+        <span className="foot-brand">Abracadata</span>
+        <a href="/terms" onClick={(e) => { e.preventDefault(); navTo("/terms"); }}>Terms</a>
+        <a href="/privacy" onClick={(e) => { e.preventDefault(); navTo("/privacy"); }}>Privacy</a>
+        <span className="foot-copy">© 2026 Flagstaff Solutions LLC</span>
+      </footer>
     </>
   );
 }

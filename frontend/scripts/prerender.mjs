@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
+import { marked } from "marked";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dist = join(root, "dist");
@@ -62,4 +63,16 @@ const galleryDesc =
 mkdirSync(join(dist, "templates"), { recursive: true });
 writeFileSync(join(dist, "templates", "index.html"), page("Templates — Abracadata", galleryDesc, galleryBody));
 
-console.log(`prerender: wrote ${templates.length} template pages + /templates gallery`);
+// Legal pages: full text prerendered for crawlers (the SPA hydrates over it).
+const legalDocs = [
+  { slug: "terms", file: "terms-of-use.md", title: "Terms of Use", desc: "The terms governing use of Abracadata." },
+  { slug: "privacy", file: "privacy-policy.md", title: "Privacy Policy", desc: "How Abracadata handles your information — your files never leave your browser." },
+];
+for (const d of legalDocs) {
+  const md = readFileSync(join(root, "src/content/legal", d.file), "utf8");
+  const body = `<main class="legal-body">${marked.parse(md)}</main>`;
+  mkdirSync(join(dist, d.slug), { recursive: true });
+  writeFileSync(join(dist, d.slug, "index.html"), page(`${d.title} — Abracadata`, d.desc, body));
+}
+
+console.log(`prerender: wrote ${templates.length} template pages + /templates gallery + ${legalDocs.length} legal pages`);
