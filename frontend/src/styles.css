@@ -1,3 +1,14 @@
+/* Self-hosted faces (served from /fonts, so the prod CSP stays `font-src 'self'`).
+   Fraunces = display serif (the "spell"); Hanken Grotesk = UI grotesque (the bench). */
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/Fraunces-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/Fraunces-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: italic; font-weight: 500; font-display: swap; src: url("/fonts/Fraunces-500-italic.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/HankenGrotesk-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/HankenGrotesk-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/HankenGrotesk-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/HankenGrotesk-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 800; font-display: swap; src: url("/fonts/HankenGrotesk-800-normal.woff2") format("woff2"); }
+
 * { box-sizing: border-box; }
 
 /* Palette — "Alchemical": violet (brand 1, the working accent) + antique gold
@@ -10,8 +21,8 @@
   --surface: #ffffff;
   --surface-2: #f3efe9;
   --ink: #211c2b;
-  --muted: #6b6478;
-  --faint: #9c95a7;
+  --muted: #3f3a4b;
+  --faint: #6a6478;
   --line: #ece7de;
   --line-strong: #ddd6ca;
   --accent: #6a2cd4;
@@ -29,13 +40,15 @@
   --shadow: 0 1px 2px rgba(33, 28, 43, 0.05), 0 10px 30px rgba(33, 28, 43, 0.07);
   --radius: 12px;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-  --ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ui: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display: "Fraunces", Georgia, "Times New Roman", serif;
   --grid: rgba(33, 28, 43, 0.1);
+  --grid-dot: rgba(106, 44, 212, 0.05);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ground: #131019; --surface: #1b1725; --surface-2: #241e30;
-    --ink: #ece8f4; --muted: #a39bb4; --faint: #6f6880;
+    --ink: #ece8f4; --muted: #cbc4d8; --faint: #948da4;
     --line: #2b2537; --line-strong: #3a3248;
     --accent: #a685ff; --accent-press: #b89dff; --accent-tint: #251d3a; --on-accent: #191323;
     --spark: #f2b53d; --spark-tint: #2c2210;
@@ -43,29 +56,36 @@
     --error-bg: #2a1620; --error-border: #5a2f42;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.45);
     --grid: rgba(236, 232, 244, 0.12);
+    --grid-dot: rgba(166, 133, 255, 0.055);
   }
 }
 :root[data-theme="light"] {
-  --ground: #faf8f4; --surface: #ffffff; --surface-2: #f3efe9; --ink: #211c2b; --muted: #6b6478;
-  --faint: #9c95a7; --line: #ece7de; --line-strong: #ddd6ca; --accent: #6a2cd4; --accent-press: #571ebd;
+  --ground: #faf8f4; --surface: #ffffff; --surface-2: #f3efe9; --ink: #211c2b; --muted: #3f3a4b;
+  --faint: #6a6478; --line: #ece7de; --line-strong: #ddd6ca; --accent: #6a2cd4; --accent-press: #571ebd;
   --accent-tint: #f0e9fd; --on-accent: #ffffff; --spark: #c47d10; --spark-tint: #fbedcd;
   --add: #1f9e6a; --add-tint: #e3f4ec; --remove: #c93f6b; --remove-tint: #fbe8f0;
   --error-bg: #fceef1; --error-border: #e7b1c0; --grid: rgba(33, 28, 43, 0.1);
+  --grid-dot: rgba(106, 44, 212, 0.05);
   --shadow: 0 1px 2px rgba(33, 28, 43, 0.05), 0 10px 30px rgba(33, 28, 43, 0.07);
 }
 :root[data-theme="dark"] {
-  --ground: #131019; --surface: #1b1725; --surface-2: #241e30; --ink: #ece8f4; --muted: #a39bb4;
-  --faint: #6f6880; --line: #2b2537; --line-strong: #3a3248; --accent: #a685ff; --accent-press: #b89dff;
+  --ground: #131019; --surface: #1b1725; --surface-2: #241e30; --ink: #ece8f4; --muted: #cbc4d8;
+  --faint: #948da4; --line: #2b2537; --line-strong: #3a3248; --accent: #a685ff; --accent-press: #b89dff;
   --accent-tint: #251d3a; --on-accent: #191323; --spark: #f2b53d; --spark-tint: #2c2210;
   --add: #4fcf94; --add-tint: #10281d; --remove: #ec7ba6; --remove-tint: #2c1622;
   --error-bg: #2a1620; --error-border: #5a2f42; --grid: rgba(236, 232, 244, 0.12);
+  --grid-dot: rgba(166, 133, 255, 0.055);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 body {
-  margin: 0; background: var(--ground); color: var(--ink);
+  margin: 0; color: var(--ink);
+  /* the ruled ground: parchment/midnight faintly dotted like graph paper / stars */
+  background-color: var(--ground);
+  background-image: radial-gradient(var(--grid-dot) 1.1px, transparent 1.6px);
+  background-size: 24px 24px; background-position: -1px -1px;
   font-family: var(--ui); font-size: 15px; line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 ::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 button { font-family: inherit; cursor: pointer; }
@@ -118,7 +138,7 @@ button { font-family: inherit; cursor: pointer; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(6px) scale(0.99); } to { opacity: 1; transform: none; } }
 .modal-close { position: absolute; top: 12px; right: 14px; border: none; background: none; font-size: 22px; line-height: 1; color: var(--faint); cursor: pointer; }
 .modal-close:hover { color: var(--ink); }
-.modal-title { font-size: 19px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.modal-title { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
 .modal-sub { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
 .field-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
 .field { width: 100%; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--ground); color: var(--ink); }
@@ -129,15 +149,15 @@ button { font-family: inherit; cursor: pointer; }
 .dev-code b { font-family: var(--mono); color: var(--ink); letter-spacing: 0.1em; }
 .modal-action { width: 100%; margin-top: 16px; padding: 11px; font-size: 14px; }
 .modal-back { display: block; margin: 12px auto 0; font-size: 13px; }
-.muted { color: var(--faint); font-size: 12.5px; }
+.muted { color: var(--muted); font-size: 12.5px; }
 
 main { padding: clamp(16px, 3vw, 32px) clamp(16px, 4vw, 40px) 72px; max-width: 1280px; margin: 0 auto; }
 
 /* landing */
 .landing { max-width: 760px; margin: min(6vh, 56px) auto 0; }
 .eyebrow { font-size: 12px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--spark); font-weight: 700; margin-bottom: 16px; }
-h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.07; letter-spacing: -0.025em; margin: 0 0 16px; text-wrap: balance; font-weight: 700; }
-h1 em { font-style: normal; color: var(--accent); }
+h1 { font-family: var(--display); font-optical-sizing: auto; font-size: clamp(30px, 5.2vw, 48px); line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 16px; text-wrap: balance; font-weight: 600; }
+h1 em { font-family: var(--display); font-style: italic; font-weight: 500; color: var(--accent); }
 .lede { font-size: clamp(15px, 2.2vw, 18px); color: var(--muted); max-width: 60ch; margin: 0 0 28px; }
 .dropzone {
   border: 1.5px dashed var(--line-strong); border-radius: 16px; background: var(--surface);
@@ -167,7 +187,7 @@ h1 em { font-style: normal; color: var(--accent); }
 /* template gallery */
 .templates-section { margin-top: 46px; }
 .templates-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-.templates-head h2 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+.templates-head h2 { font-family: var(--display); font-weight: 600; font-size: 21px; margin: 0; letter-spacing: -0.005em; }
 .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .template-card {
   display: flex; gap: 13px; align-items: flex-start; text-align: left; cursor: pointer;
@@ -194,7 +214,7 @@ h1 em { font-style: normal; color: var(--accent); }
 
 /* workspace */
 .header-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; gap: 12px; }
-.page-title { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+.page-title { font-family: var(--display); font-weight: 600; font-size: 21px; margin: 0; letter-spacing: -0.005em; }
 .card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); overflow: hidden;
