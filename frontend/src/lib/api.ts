@@ -200,6 +200,10 @@ export async function getSharedRecipe(token: string): Promise<SharedRecipe> {
 
 export interface AdminFlags { llm_enabled: boolean; updated_at: string | null; updated_by: string | null }
 export interface AdminStats { users: number; recipes: number; codes_last_hour: number }
+export interface AdminUsage {
+  calls: number; input_tokens: number; output_tokens: number;
+  estimated_cost: number; budget: number; pct_of_budget: number;
+}
 export interface AdminCosts {
   month: string; total: number; currency: string;
   by_service: { service: string; amount: number }[];
@@ -217,6 +221,19 @@ export function adminSetLlm(enabled: boolean): Promise<AdminFlags> {
     credentials: "include",
     body: JSON.stringify({ enabled }),
   }).then(j<AdminFlags>);
+}
+
+export function adminSetBudget(usd: number): Promise<AdminUsage> {
+  return fetch("/api/admin/budget", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ usd }),
+  }).then(j<AdminUsage>);
+}
+
+export function adminUsage(): Promise<AdminUsage> {
+  return fetch("/api/admin/usage", { credentials: "include" }).then(j<AdminUsage>);
 }
 
 export function adminStats(): Promise<AdminStats> {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminCosts, adminFlags, adminSetLlm, adminStats, type AdminCosts, type AdminFlags, type AdminStats } from "../lib/api";
+import { adminCosts, adminFlags, adminSetLlm, adminSetBudget, adminStats, adminUsage, type AdminCosts, type AdminFlags, type AdminStats, type AdminUsage } from "../lib/api";
 
 /**
  * Admin controls. The kill switch exists for a cost/abuse spike, so it is the
@@ -10,16 +10,19 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
   const [flags, setFlags] = useState<AdminFlags | null>(null);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [costs, setCosts] = useState<AdminCosts | null>(null);
+  const [llm, setLlm] = useState<AdminUsage | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [f, s] = await Promise.all([adminFlags(), adminStats()]);
+        const [f, s, u] = await Promise.all([adminFlags(), adminStats(), adminUsage()]);
         setFlags(f);
         setStats(s);
+        setLlm(u);
       } catch {
         setErr("Couldn't load admin data — are you still signed in as an admin?");
       }
@@ -38,6 +41,20 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
       setFlags(await adminSetLlm(next));
     } catch {
       setErr("Couldn't change the setting. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveBudget() {
+    const v = Number(budgetDraft);
+    if (!Number.isFinite(v) || v < 0) return;
+    setBusy(true);
+    try {
+      setLlm(await adminSetBudget(v));
+      setBudgetDraft("");
+    } catch {
+      setErr("Couldn't change the budget.");
     } finally {
       setBusy(false);
     }
@@ -94,6 +111,46 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
           )}
         </div>
       </div>
+
+      {llm && (
+        <div className="card section">
+          <div className="card-header">
+            <h2>AI usage today</h2>
+            <span className="count">resets 00:00 UTC</span>
+          </div>
+          <div className="card-body">
+            <div className="admin-total">
+              ${llm.estimated_cost.toFixed(2)}
+              <span className="admin-total-label">of ${llm.budget.toFixed(2)} budget · {llm.pct_of_budget}%</span>
+            </div>
+            <div className="budget-bar" aria-hidden="true">
+              <div className={`budget-fill ${llm.pct_of_budget >= 60 ? "warn" : ""}`}
+                style={{ width: `${Math.min(100, llm.pct_of_budget)}%` }} />
+            </div>
+            <table className="admin-costs">
+              <tbody>
+                <tr><td>Model calls</td><td className="num">{llm.calls}</td></tr>
+                <tr><td>Input tokens</td><td className="num">{llm.input_tokens.toLocaleString()}</td></tr>
+                <tr><td>Output tokens</td><td className="num">{llm.output_tokens.toLocaleString()}</td></tr>
+              </tbody>
+            </table>
+            <div className="admin-actions" style={{ marginTop: 14 }}>
+              <input className="field" style={{ maxWidth: 130 }} type="number" min="0" step="1"
+                placeholder={`${llm.budget}`} value={budgetDraft}
+                onChange={(e) => setBudgetDraft(e.target.value)} aria-label="Daily budget in USD" />
+              <button className="btn" disabled={busy || budgetDraft === ""} onClick={saveBudget}>
+                Set daily budget
+              </button>
+            </div>
+            <p className="admin-meta">
+              Estimated from token counts, so it's visible immediately — AWS billing lags hours behind.
+              Generation pauses automatically at 100% and emails admins.
+              <strong> After an automatic pause, raise the budget first</strong> — resuming alone
+              is undone by the next request's budget check.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="card section">
         <div className="card-header">

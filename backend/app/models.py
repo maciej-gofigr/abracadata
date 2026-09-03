@@ -54,6 +54,26 @@ class Setting(Base):
     updated_by: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
 
 
+class LlmUsage(Base):
+    """One row per model call, for rate limiting and spend visibility.
+
+    Token counts (not call counts) are recorded because cost varies enormously
+    per call — a one-line prompt and a full agent turn with a large transcript
+    differ by orders of magnitude.
+    """
+
+    __tablename__ = "llm_usage"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="generate")  # generate | suggest
+    ip: Mapped[str] = mapped_column(String(64), index=True, default="")
+    session_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    model: Mapped[str] = mapped_column(String(128), default="")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class LoginCode(Base):
     """A short-lived, single-use email verification code (stored hashed)."""
 

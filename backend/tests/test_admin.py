@@ -59,6 +59,17 @@ def _sign_in(client: TestClient, email: str) -> None:
     client.post("/auth/verify", json={"email": email, "code": r.json()["dev_code"]})
 
 
+def _set_budget(db, usd: float) -> None:
+    """Pin the ceiling so tests don't depend on the shipped default."""
+    from app import usage
+    from app.models import Setting
+
+    row = db.get(Setting, usage.DAILY_BUDGET_USD) or Setting(key=usage.DAILY_BUDGET_USD)
+    row.value = str(usd)
+    db.add(row)
+    db.commit()
+
+
 def _make_admin(email: str) -> None:
     db = _Session()
     db.execute(select(User).where(User.email == email)).scalar_one().is_admin = True
@@ -191,3 +202,69 @@ def test_refresh_bypasses_the_cost_cache(app: FastAPI, monkeypatch) -> None:
     assert calls["n"] == 2
     assert admin.get("/admin/costs").json()["total"] == 2.0   # refresh reseeded the cache
     assert calls["n"] == 2
+
+
+def test_per_ip_limit_and_budget_backstop(app: FastAPI, monkeypatch) -> None:
+    """Two independent ceilings: one abuser, and total daily spend."""
+    from app import flags, usage
+    from app.db import get_db
+
+    db = next(app.dependency_overrides[get_db]())
+
+    # --- per-IP ceiling
+    monkeypatch.setattr(usage, "MAX_CALLS_PER_IP_HOUR", 3)
+    for _ in range(3):
+        usage.record(db, kind="generate", model="sonnet", ip="203.0.113.9", input_tokens=10, output_tokens=5)
+    assert usage.over_ip_limit(db, "203.0.113.9") is True
+    assert usage.over_ip_limit(db, "198.51.100.1") is False, "limit must be per-IP, not global"
+
+    # --- token accounting drives cost, not call count
+    before = usage.today_totals(db)["estimated_cost"]
+    usage.record(db, kind="generate", model="global.anthropic.claude-sonnet-4-6",
+                 ip="198.51.100.2", input_tokens=1_000_000, output_tokens=100_000)
+    after = usage.today_totals(db)["estimated_cost"]
+    assert round(after - before, 2) == 4.50, "1M in @ $3 + 100k out @ $15 = $4.50"
+
+    # --- budget backstop pauses generation and is visible in the same flag
+    _set_budget(db, 5.0)
+    flags.set_bool(db, flags.LLM_ENABLED, True)
+    sent: list[tuple] = []
+    monkeypatch.setattr(usage, "_notify_admins", lambda db, s, b, paused: sent.append((s, b, paused)))
+    usage.record(db, kind="generate", model="global.anthropic.claude-sonnet-4-6",
+                 ip="198.51.100.3", input_tokens=1_000_000, output_tokens=0)
+    assert usage.enforce_budget(db) is True          # now over the pinned $5 ceiling
+    assert flags.llm_enabled(db) is False, "budget exhaustion must pause generation"
+    assert sent and sent[-1][2] is True, "an alert must be raised when auto-pausing"
+
+    flags.set_bool(db, flags.LLM_ENABLED, True)
+    db.close()
+
+
+def test_raising_the_budget_allows_recovery_after_an_auto_pause(app: FastAPI, monkeypatch) -> None:
+    """Resuming alone is not enough — the next request would re-pause.
+
+    Without an adjustable ceiling an admin would be stuck until midnight UTC.
+    """
+    from app import flags, usage
+
+    monkeypatch.setattr(usage, "_notify_admins", lambda *a, **k: None)
+    admin = TestClient(app)
+    _sign_in(admin, "budget@example.com")
+    _make_admin("budget@example.com")
+
+    from app.db import get_db
+    db = next(app.dependency_overrides[get_db]())
+    _set_budget(db, 5.0)
+    usage.record(db, kind="generate", model="global.anthropic.claude-sonnet-4-6",
+                 ip="198.51.100.77", input_tokens=3_000_000, output_tokens=0)  # $9 > $5
+    assert usage.enforce_budget(db) is True
+    assert flags.llm_enabled(db) is False
+
+    # Raise the ceiling, then resume — the next check must now pass.
+    r = admin.post("/admin/budget", json={"usd": 50})
+    assert r.status_code == 200 and r.json()["budget"] == 50.0
+    admin.post("/admin/flags/llm", json={"enabled": True})
+    assert usage.enforce_budget(db) is False, "raised budget must let generation continue"
+    assert flags.llm_enabled(db) is True
+
+    db.close()

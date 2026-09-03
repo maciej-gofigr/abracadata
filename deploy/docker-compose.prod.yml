@@ -38,6 +38,8 @@ services:
       # Sign-in emails via SES (unset -> codes are logged, not emailed).
       MAIL_FROM: ${MAIL_FROM:-}
       APP_NAME: ${APP_NAME:-Abracadata}
+      # Starting daily AI spend ceiling; the admin page overrides it at runtime.
+      LLM_DAILY_BUDGET_USD: ${LLM_DAILY_BUDGET_USD:-50}
       # AUTH_DEV_ECHO and MOCK_GENERATE intentionally UNSET (off) in prod.
     networks: [app]
 

@@ -48,8 +48,21 @@ class StatsResponse(BaseModel):
     codes_last_hour: int
 
 
+class UsageResponse(BaseModel):
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    estimated_cost: float
+    budget: float
+    pct_of_budget: float
+
+
 class SetLlmBody(BaseModel):
     enabled: bool
+
+
+class SetBudgetBody(BaseModel):
+    usd: float
 
 
 class CostResponse(BaseModel):
@@ -148,6 +161,46 @@ def set_llm(
 ) -> FlagsResponse:
     flags.set_bool(db, flags.LLM_ENABLED, body.enabled, actor=principal.user.email if principal.user else None)
     return read_flags(principal, db)
+
+
+@router.post("/budget", response_model=UsageResponse)
+def set_budget(
+    body: SetBudgetBody,
+    principal: Principal = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UsageResponse:
+    """Change today's spend ceiling.
+
+    Needed for recovery: once the budget is exhausted the service auto-pauses,
+    and resuming alone would be undone by the next request's budget check. The
+    way out is to raise the ceiling (having checked the traffic), then resume.
+    """
+    from app import usage as usage_mod
+    from app.models import Setting
+
+    value = max(0.0, float(body.usd))
+    row = db.get(Setting, usage_mod.DAILY_BUDGET_USD)
+    if row is None:
+        row = Setting(key=usage_mod.DAILY_BUDGET_USD)
+        db.add(row)
+    row.value = str(value)
+    row.updated_by = principal.user.email if principal.user else None
+    db.commit()
+    return llm_usage(principal, db)
+
+
+@router.get("/usage", response_model=UsageResponse)
+def llm_usage(_: Principal = Depends(require_admin), db: Session = Depends(get_db)) -> UsageResponse:
+    """Today's model usage against the auto-pause budget."""
+    from app import usage as usage_mod
+
+    totals = usage_mod.today_totals(db)
+    budget = usage_mod.daily_budget(db)
+    return UsageResponse(
+        **totals,
+        budget=budget,
+        pct_of_budget=round(100 * totals["estimated_cost"] / budget, 1) if budget > 0 else 0.0,
+    )
 
 
 @router.get("/stats", response_model=StatsResponse)

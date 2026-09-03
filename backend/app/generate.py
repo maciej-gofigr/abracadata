@@ -24,15 +24,23 @@ from typing import Any, Iterator
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app import flags
+from app import flags, usage
 from app.db import get_db
 
 router = APIRouter()
+
+
+def _client_ip(request: Request) -> str:
+    """Caller IP — behind Caddy the real client is first in X-Forwarded-For."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "")[:64]
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 # Sonnet 4.6 via the GLOBAL cross-region profile: fast, and this account has invoke
@@ -437,7 +445,13 @@ def _stream_turn(system: str, messages: list[dict[str, Any]], tool_config: dict)
     )
     blocks: dict[int, dict[str, Any]] = {}
     stop = "end_turn"
+    usage: dict[str, int] = {"input": 0, "output": 0}
     for event in resp["stream"]:
+        if "metadata" in event:
+            u = event["metadata"].get("usage") or {}
+            usage["input"] = int(u.get("inputTokens") or 0)
+            usage["output"] = int(u.get("outputTokens") or 0)
+            yield ("usage", usage)
         if "contentBlockStart" in event:
             e = event["contentBlockStart"]
             start = e.get("start", {})
@@ -521,12 +535,14 @@ def _parse_suggestions(text: str) -> list[str]:
 
 
 @router.post("/suggest")
-def suggest(req: SuggestRequest, db: Session = Depends(get_db)) -> dict[str, list[str]]:
+def suggest(request: Request, req: SuggestRequest, db: Session = Depends(get_db)) -> dict[str, list[str]]:
     """Best-effort: returns [] on any failure so it never blocks the UI."""
     if not req.inputs:
         return {"suggestions": []}
-    if not flags.llm_enabled(db):
-        return {"suggestions": []}  # kill switch: never spend on a suggestion
+    if usage.enforce_budget(db) or not flags.llm_enabled(db):
+        return {"suggestions": []}  # kill switch / budget: never spend on a suggestion
+    if usage.over_ip_limit(db, _client_ip(request)):
+        return {"suggestions": []}
     if os.environ.get("MOCK_GENERATE"):
         return {"suggestions": ["Total the amount by region", "Show the top 10 rows by amount", "Count rows per category"]}
     prompt = f"Loaded tables:\n{_schema_lines(req.inputs)}\n\nSuggest 3-4 things to do. JSON array of strings only."
@@ -538,6 +554,9 @@ def suggest(req: SuggestRequest, db: Session = Depends(get_db)) -> dict[str, lis
             inferenceConfig={"maxTokens": 300, "temperature": 0.7},
         )
         text = resp["output"]["message"]["content"][0]["text"]
+        u = resp.get("usage") or {}
+        usage.record(db, kind="suggest", model=SUGGEST_MODEL, ip=_client_ip(request),
+                     input_tokens=u.get("inputTokens", 0), output_tokens=u.get("outputTokens", 0))
         return {"suggestions": _parse_suggestions(text)}
     except Exception:
         return {"suggestions": []}
@@ -578,8 +597,14 @@ _MOCK_PARAMS = [
 
 
 @router.post("/generate")
-def generate(req: GenerateRequest, db: Session = Depends(get_db)) -> StreamingResponse:
-    if not flags.llm_enabled(db):
+def generate(request: Request, req: GenerateRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    caller_ip = _client_ip(request)
+
+    # Order matters: the budget check can itself pause the service, so run it
+    # before reading the flag.
+    budget_exhausted = usage.enforce_budget(db)
+
+    if budget_exhausted or not flags.llm_enabled(db):
         # Kill switch (admin): stop before any billable call is made.
         def disabled() -> Iterator[str]:
             yield _sse({
@@ -587,6 +612,14 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)) -> StreamingRe
                 "error": "Recipe generation is paused right now. Your files and saved recipes are unaffected — please try again a little later.",
             })
         return StreamingResponse(disabled(), media_type="text/event-stream")
+
+    if usage.over_ip_limit(db, caller_ip):
+        def limited() -> Iterator[str]:
+            yield _sse({
+                "type": "error",
+                "error": "You've generated a lot of recipes in a short time. Please wait a while and try again.",
+            })
+        return StreamingResponse(limited(), media_type="text/event-stream")
 
     if os.environ.get("MOCK_GENERATE"):
         def mock() -> Iterator[str]:
@@ -617,15 +650,22 @@ def generate(req: GenerateRequest, db: Session = Depends(get_db)) -> StreamingRe
 
     def gen() -> Iterator[str]:
         blocks: list[dict[str, Any]] = []
+        tokens = {"input": 0, "output": 0}
         try:
             for ev in _stream_turn(SYSTEM_PROMPT, messages, tool_config):
                 if ev[0] == "text":
                     yield _sse({"text": ev[1]})
+                elif ev[0] == "usage":
+                    tokens = ev[1]
                 else:
                     blocks = ev[1]
         except Exception as exc:
             yield _sse({"type": "error", "error": _friendly_error(exc)})
             return
+        finally:
+            # Meter even a failed turn: Bedrock may still have billed for it.
+            usage.record(db, kind="generate", model=BEDROCK_MODEL, ip=caller_ip,
+                         input_tokens=tokens["input"], output_tokens=tokens["output"])
 
         assistant = _assistant_neutral(blocks)
         tool_uses = {c["name"]: c for c in assistant["tool_calls"]}
