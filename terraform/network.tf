@@ -15,8 +15,11 @@ locals {
 }
 
 resource "aws_security_group" "app" {
-  name        = "${var.project}-app"
-  description = "Abracadata: HTTP/HTTPS in, everything out. SSH optional."
+  name = "${var.project}-app"
+  # NOTE: an SG description is immutable in AWS — editing this string forces the
+  # security group (and anything depending on it) to be REPLACED. Left at the
+  # original wording deliberately; it matches the prestidata-* infra identifiers.
+  description = "Prestidata: HTTP/HTTPS in, everything out. SSH optional."
   vpc_id      = data.aws_vpc.default.id
 
   ingress {

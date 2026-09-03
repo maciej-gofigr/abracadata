@@ -27,3 +27,19 @@ output "bring_up" {
   description = "Run this on the box (via ssm_command) to deploy the app."
   value       = "sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/abracadata/main/deploy/box-setup.sh | bash'"
 }
+
+output "ses_dns_records" {
+  description = "Publish these at your DNS host to verify the domain for sending (3 DKIM CNAMEs)."
+  value = var.mail_domain == "" ? [] : [
+    for t in aws_sesv2_email_identity.mail[0].dkim_signing_attributes[0].tokens : {
+      type  = "CNAME"
+      host  = "${t}._domainkey.${var.mail_domain}"
+      value = "${t}.dkim.amazonses.com"
+    }
+  ]
+}
+
+output "ses_mail_from" {
+  description = "Set this as MAIL_FROM in the box's .env once the domain is verified."
+  value       = var.mail_domain == "" ? "" : "Abracadata <login@${var.mail_domain}>"
+}

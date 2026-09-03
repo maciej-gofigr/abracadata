@@ -35,6 +35,9 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-2}
       BEDROCK_MODEL: ${BEDROCK_MODEL:-global.anthropic.claude-sonnet-4-6}
       SUGGEST_MODEL: ${SUGGEST_MODEL:-global.anthropic.claude-haiku-4-5-20251001-v1:0}
+      # Sign-in emails via SES (unset -> codes are logged, not emailed).
+      MAIL_FROM: ${MAIL_FROM:-}
+      APP_NAME: ${APP_NAME:-Abracadata}
       # AUTH_DEV_ECHO and MOCK_GENERATE intentionally UNSET (off) in prod.
     networks: [app]
 

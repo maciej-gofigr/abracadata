@@ -18,6 +18,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from fastapi import HTTPException
+
+import app.auth as auth
 from app.auth import router as auth_router
 from app.db import Base, get_db
 from app.recipes import router as recipes_router
@@ -125,3 +128,44 @@ def test_logout_detaches_browser(app: FastAPI) -> None:
     # Signing back in restores access.
     _sign_in(client, "logout@example.com")
     assert {r["name"] for r in client.get("/recipes").json()} == {"Kept on the account"}
+
+
+def test_send_code_logs_when_no_mailer(monkeypatch, caplog):
+    """With MAIL_FROM unset (dev), the code is logged rather than emailed."""
+    monkeypatch.delenv("MAIL_FROM", raising=False)
+    with caplog.at_level("INFO"):
+        auth._send_code("someone@example.com", "123456")
+    assert "123456" in caplog.text
+
+
+def test_send_code_sends_via_ses(monkeypatch):
+    """With MAIL_FROM set, it sends through SES with both text and HTML parts."""
+    sent = {}
+
+    class FakeSES:
+        def send_email(self, **kw):
+            sent.update(kw)
+
+    monkeypatch.setenv("MAIL_FROM", "Abracadata <login@abracadata.me>")
+    monkeypatch.setattr("boto3.client", lambda *a, **k: FakeSES())
+    auth._send_code("someone@example.com", "123456")
+
+    assert sent["FromEmailAddress"] == "Abracadata <login@abracadata.me>"
+    assert sent["Destination"]["ToAddresses"] == ["someone@example.com"]
+    body = sent["Content"]["Simple"]
+    assert "123456" in body["Subject"]["Data"]
+    assert "123456" in body["Body"]["Text"]["Data"]
+    assert "123456" in body["Body"]["Html"]["Data"]
+
+
+def test_send_code_surfaces_send_failure(monkeypatch):
+    """A failed send must not silently report success to the caller."""
+    class BoomSES:
+        def send_email(self, **kw):
+            raise RuntimeError("SES is unhappy")
+
+    monkeypatch.setenv("MAIL_FROM", "login@abracadata.me")
+    monkeypatch.setattr("boto3.client", lambda *a, **k: BoomSES())
+    with pytest.raises(HTTPException) as e:
+        auth._send_code("someone@example.com", "123456")
+    assert e.value.status_code == 502

@@ -32,6 +32,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger("app.auth")
 
 CODE_TTL = timedelta(minutes=10)
+# Product name used in sign-in emails (frontend's source of truth is branding.ts).
+APP_NAME = os.environ.get("APP_NAME", "Abracadata")
 
 
 def _now() -> datetime:
@@ -52,8 +54,55 @@ def _normalize(email: str) -> str:
 
 
 def _send_code(email: str, code: str) -> None:
-    """Deliver the login code. Stub: log it. Wire a real mailer here for prod."""
-    log.info("login code for %s: %s", email, code)
+    """Deliver the login code.
+
+    Sends via Amazon SES when ``MAIL_FROM`` is set (credentials come from the
+    EC2 instance role in prod); otherwise logs the code, which keeps local dev
+    working with no mailer. ``AUTH_DEV_ECHO=1`` additionally returns it in the
+    response for local testing.
+    """
+    sender = os.environ.get("MAIL_FROM")
+    if not sender:
+        log.info("login code for %s: %s", email, code)
+        return
+
+    subject = f"{code} is your {APP_NAME} sign-in code"
+    text = (
+        f"Your {APP_NAME} sign-in code is:\n\n    {code}\n\n"
+        f"It expires in {int(CODE_TTL.total_seconds() // 60)} minutes.\n"
+        "If you didn't request this, you can ignore this email.\n"
+    )
+    html = (
+        f'<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
+        f'font-size:15px;line-height:1.5;color:#211c2b">'
+        f"<p>Your <strong>{APP_NAME}</strong> sign-in code is:</p>"
+        f'<p style="font-size:30px;font-weight:700;letter-spacing:.18em;color:#6a2cd4;margin:18px 0">{code}</p>'
+        f"<p>It expires in {int(CODE_TTL.total_seconds() // 60)} minutes.</p>"
+        f'<p style="color:#6b6478;font-size:13px">If you didn\'t request this, you can ignore this email.</p>'
+        f"</div>"
+    )
+
+    try:
+        import boto3
+
+        client = boto3.client("sesv2", region_name=os.environ.get("AWS_REGION", "us-east-2"))
+        client.send_email(
+            FromEmailAddress=sender,
+            Destination={"ToAddresses": [email]},
+            Content={
+                "Simple": {
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {
+                        "Text": {"Data": text, "Charset": "UTF-8"},
+                        "Html": {"Data": html, "Charset": "UTF-8"},
+                    },
+                }
+            },
+        )
+    except Exception:
+        # Don't leak whether the address exists; log for us, generic error out.
+        log.exception("failed to send login code to %s", email)
+        raise HTTPException(status_code=502, detail="Couldn't send the code right now. Please try again.")
 
 
 class RequestBody(BaseModel):

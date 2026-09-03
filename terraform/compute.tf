@@ -37,6 +37,21 @@ resource "aws_instance" "app" {
   }
 
   tags = { Name = var.project }
+
+  # This instance holds the ONLY copy of the Postgres data (docker volumes on the
+  # root EBS volume, which is delete_on_termination). Two guards:
+  #
+  # 1. ignore_changes = [ami] — Canonical ships new Ubuntu AMIs regularly, and a
+  #    changed `ami` FORCES REPLACEMENT. Without this, an unrelated `apply` (e.g.
+  #    adding SES) silently destroys the box and the database. New AMIs are picked
+  #    up by deliberately rebuilding, not as a side effect.
+  # 2. prevent_destroy — turns any plan that would destroy this instance into an
+  #    error instead of data loss. To intentionally rebuild: remove this line (or
+  #    run `terraform apply -replace=aws_instance.app`) AFTER backing up Postgres.
+  lifecycle {
+    ignore_changes  = [ami]
+    prevent_destroy = true
+  }
 }
 
 # Stable public IP so DNS (once you have a domain) doesn't chase the instance.

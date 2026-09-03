@@ -101,10 +101,38 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 ```
 (Put that in a cron/systemd-timer.) Or snapshot the EBS volume.
 
+## 6. Email sign-in (Amazon SES)
+
+Sign-in codes are emailed via SES. `terraform apply` creates the domain identity,
+a configuration set (bounce/complaint metrics), and grants the instance role
+`ses:SendEmail` — but sending needs two manual steps:
+
+**a. Verify the domain.** Publish the three DKIM CNAMEs from the Terraform output
+at your DNS host (Squarespace):
+```sh
+cd terraform && terraform output ses_dns_records
+```
+Verification flips to *Verified* automatically once they resolve (minutes to a
+few hours). Check: SES console -> Identities, or
+`aws sesv2 get-email-identity --email-identity abracadata.me --region us-east-2`.
+
+**b. Request production access.** New SES accounts are sandboxed — you can only
+send to addresses you've verified. In the SES console choose **Account dashboard
+-> Request production access**, describe the use case (transactional sign-in
+codes only, with the sign-up flow and bounce handling). Approval typically takes
+under 24 hours.
+
+Then turn it on:
+```sh
+# on the box, in /opt/prestidata/.env
+MAIL_FROM=Abracadata <login@abracadata.me>
+```
+and rebuild the web image with `VITE_AUTH_ENABLED=true` (build arg in
+`deploy/web.Dockerfile`) so the sign-in UI appears. With `MAIL_FROM` unset the
+backend just logs codes, so nothing breaks before SES is ready.
+
 ## Later: production hardening
 
-- **SES for sign-in:** verify a sender, request prod access, implement `_send_code`
-  in `backend/app/auth.py`, then rebuild the web image with `VITE_AUTH_ENABLED=true`.
 - **RDS:** create a Postgres instance, `pg_dump | pg_restore`, drop the `postgres`
   service, and point `DATABASE_URL` at RDS. Nothing else changes.
 - **Auto-deploy, healthchecks/alerts, a second AZ** — when it's more than a POC.
