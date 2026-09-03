@@ -106,8 +106,10 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
 - **Auth is passwordless + optional** (`backend/app/auth.py`): email → 6-digit code. The `anon_id` cookie
   *is* the session (`backend/app/owner.py`); signing in links it to a `User` and **claims** the session's
   anonymous recipes. A recipe is owned by *either* an anon session or a user (`owner.py` resolves a
-  `Principal`; `recipes.py` scopes every route through it). `_send_code` just logs today; `AUTH_DEV_ECHO=1`
-  returns the code in the response for local use — wire a real mailer (e.g. SES) for prod.
+  `Principal`; `recipes.py` scopes every route through it). `_send_code` sends via **SES** when `MAIL_FROM` is set (prod; creds from the
+  instance role) and otherwise logs the code; `AUTH_DEV_ECHO=1` also returns it in the response for
+  local use. `/auth/request` is rate-limited (cooldown + per-email + per-IP) — it mails an address the
+  *caller* supplies, so an unthrottled endpoint is an email-bombing vector that would wreck SES standing.
 - **Persistence:** SQLAlchemy 2.0; sqlite `backend/data/app.db` by default, Postgres via compose
   (`DATABASE_URL`). Recipe versions are immutable snapshots (script + params + param_values + inputs).
 - **Migrations (Alembic) — never `create_all`.** The schema changes only via revisions in
