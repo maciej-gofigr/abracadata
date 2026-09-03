@@ -34,6 +34,7 @@ import {
 } from "./lib/api";
 import { runAgent, type AgentActivity, type AgentTurn } from "./lib/agent";
 import { chatEntries } from "./lib/chat";
+import { initAnalytics, track, trackConversion, trackPageView } from "./lib/analytics";
 import { ParamControl, defaultsOf, useParamOptions, type ParamValues } from "./components/ParamControl";
 import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
@@ -100,6 +101,8 @@ export function App() {
   const [copiedShare, setCopiedShare] = useState(false);
 
   useEffect(() => {
+    initAnalytics();
+    trackPageView(window.location.pathname);
     dataWorker.warmUp();
     void refreshLibrary();
     if (AUTH_ENABLED) void authMe().then((r) => setUser(r.email)).catch(() => {});
@@ -167,6 +170,7 @@ export function App() {
   function navTo(path: string) {
     window.history.pushState({}, "", path);
     applyRoute(path);
+    trackPageView(path);
     window.scrollTo({ top: 0 });
   }
 
@@ -183,7 +187,9 @@ export function App() {
     setRunning(true);
     setRunError(null);
     try {
-      setOutput(await dataWorker.runScript(src, values));
+      const result = await dataWorker.runScript(src, values);
+      setOutput(result);
+      track("recipe_run", { table_count: result.tables.length, plot_count: result.plots.length });
     } catch (err) {
       setOutput(null);
       setRunError(errorMessage(err));
@@ -210,6 +216,7 @@ export function App() {
     }
     setInputs(current);
     if (addedData) setActiveInputIdx(current.length - 1); // focus the file just added
+    if (addedData) track("file_uploaded", { file_count: current.length });
     if (script && current.length && !loadedRecipe) void run(script, paramValues, current);
     // Fresh authoring (no recipe yet): suggest a few things to try, one click each.
     if (addedData && !loadedRecipe && !script && transcript.length === 0) void loadSuggestions(current);
@@ -357,6 +364,7 @@ export function App() {
           setGenerating(false);
         },
         onFinal: ({ script: src, params: ps, steps: st }) => {
+          track("recipe_generated", { step_count: st.length, param_count: ps.length });
           // The explanation isn't set here — agent.ts records it as an assistant
           // turn, so it renders as a chat bubble like every other reply.
           setGenerating(false);
@@ -474,6 +482,7 @@ export function App() {
       if (currentRecipeId) {
         const d = await addVersion(currentRecipeId, payload);
         setLibMsg(`Saved v${d.current_version?.version_no}`);
+        trackConversion("save_recipe", { kind: "new_version" });
         await refreshVersions(currentRecipeId);
       } else {
         const name = currentRecipeName || userPrompts()[0]?.slice(0, 48) || "Untitled recipe";
@@ -481,6 +490,7 @@ export function App() {
         setCurrentRecipeId(d.id);
         setCurrentRecipeName(d.name);
         setLibMsg(`Saved “${d.name}”`);
+        trackConversion("save_recipe", { kind: "first_save" });
       }
       await refreshLibrary();
     } catch (err) {
@@ -522,6 +532,8 @@ export function App() {
     setShowGallery(false);
     setApplyState({ recipe: templateToApply(t), mode: "template" });
     window.history.pushState({}, "", `/t/${t.slug}`);
+    trackPageView(`/t/${t.slug}`);
+    track("template_opened", { template: t.slug });
     setMeta(`${t.name} — ${APP_NAME}`, t.description);
     window.scrollTo({ top: 0 });
   }
@@ -530,6 +542,7 @@ export function App() {
     setApplyState(null);
     setShowGallery(true);
     window.history.pushState({}, "", "/templates");
+    trackPageView("/templates");
     setMeta(`Templates — ${APP_NAME}`, GALLERY_DESC);
     window.scrollTo({ top: 0 });
   }
@@ -541,6 +554,7 @@ export function App() {
     void dataWorker.clearInputs();
     if (onDeepLink) {
       window.history.pushState({}, "", "/");
+      trackPageView("/");
       setMeta(APP_NAME, APP_TAGLINE);
       reset();
     }
@@ -660,6 +674,10 @@ export function App() {
   async function onSignedIn(email: string) {
     setUser(email);
     setAuthOpen(false);
+    // Passwordless sign-in is the same flow for a new and returning account, so
+    // this is reported as sign_up (the acquisition conversion) plus login.
+    trackConversion("sign_up", { method: "email_code" });
+    track("login", { method: "email_code" });
     await refreshLibrary(); // ownership changed — show the account's library
   }
 

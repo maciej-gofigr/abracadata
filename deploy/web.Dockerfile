@@ -9,6 +9,16 @@ COPY frontend/ ./
 # /auth/request is rate-limited. Set to false to hide the sign-in UI again.
 ARG VITE_AUTH_ENABLED=true
 ENV VITE_AUTH_ENABLED=$VITE_AUTH_ENABLED
+# Analytics (GA4 + Google Ads). Baked in at build time; empty = analytics off,
+# which is what local/dev builds get.
+ARG VITE_GA_MEASUREMENT_ID=""
+ARG VITE_ADS_CONVERSION_ID=""
+ARG VITE_ADS_LABEL_SAVE_RECIPE=""
+ARG VITE_ADS_LABEL_SIGN_UP=""
+ENV VITE_GA_MEASUREMENT_ID=$VITE_GA_MEASUREMENT_ID \
+    VITE_ADS_CONVERSION_ID=$VITE_ADS_CONVERSION_ID \
+    VITE_ADS_LABEL_SAVE_RECIPE=$VITE_ADS_LABEL_SAVE_RECIPE \
+    VITE_ADS_LABEL_SIGN_UP=$VITE_ADS_LABEL_SIGN_UP
 # tsc + vite build + prerender (dist/ includes the /t/{slug} + /templates SEO pages).
 RUN npm run build
 

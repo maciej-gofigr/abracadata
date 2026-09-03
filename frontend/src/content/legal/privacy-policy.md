@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated: August 31, 2026**
+**Last updated: September 3, 2026**
 
 This Privacy Policy explains how **Flagstaff Solutions LLC** ("Flagstaff", "we",
 "us", or "our") collects, uses, and shares information in connection with
@@ -24,6 +24,9 @@ plain-language descriptions you type, and, **only if you turn on the optional
 "let the AI look at sample values" setting, a small sample of rows.** Everything
 below explains this in detail. If that setting is off, the values inside your
 data are never sent to us.
+
+We also use Google Analytics and Google Ads to measure how the Service is used
+and how well our advertising works. That sees your visit — not your files.
 
 ---
 
@@ -65,12 +68,19 @@ to operate, secure, and improve the Service.
 
 ### d. Cookies and similar technologies
 
-We use a small number of cookies and similar technologies that are essential to
-the Service — in particular, an identifier stored on your device that maintains
-your session and associates your saved recipes with you (including before you
-create an account). We do not use third-party advertising cookies. Most browsers
-let you control cookies; disabling essential cookies may prevent parts of the
-Service from working.
+We use cookies and similar technologies in two ways:
+
+- **Essential.** An identifier stored on your device that maintains your session
+  and associates your saved recipes with you (including before you create an
+  account). The Service does not work without these.
+- **Analytics and advertising.** We use Google Analytics and Google Ads to
+  understand how the Service is used and to measure our advertising. These set
+  cookies (for example `_ga` and `_gcl_*`) that help us count visitors, see which
+  steps people complete, and attribute sign-ups to the ad that brought them.
+
+Most browsers let you control cookies, and you can opt out of Google Analytics
+entirely with Google's [browser add-on](https://tools.google.com/dlpage/gaoptout).
+Disabling essential cookies may prevent parts of the Service from working.
 
 ## 2. How We Use Information
 
@@ -100,8 +110,15 @@ We do not sell your personal information. We share information only as follows:
     According to AWS, content processed through Amazon Bedrock is not used to
     train the underlying models and is not shared with the model provider for
     that purpose.
-  - **Email delivery:** if account sign-in by email is enabled, a provider used
-    to deliver one-time codes.
+  - **Email delivery — Amazon SES:** delivers the one-time sign-in codes.
+  - **Analytics and advertising — Google (Google Analytics 4 and Google Ads):**
+    receives usage events (pages viewed, and which steps you complete, such as
+    running or saving a recipe and signing up), along with the standard
+    information a website receives — your IP address, browser and device
+    information, and the identifiers in the cookies described above. This is used
+    to measure and improve the Service and to measure our advertising. **The
+    contents of your files are never sent to Google** (they never leave your
+    browser at all), and neither are your recipe descriptions or recipe text.
 - **Legal and safety.** We may disclose information if required by law or legal
   process, or if we reasonably believe disclosure is necessary to protect the
   rights, property, or safety of Flagstaff, our users, or the public.
@@ -139,18 +156,25 @@ and we cannot guarantee absolute security.
   and associated data by contacting us (see Section 11).
 - **Marketing.** If we send optional communications, you may opt out using the
   unsubscribe mechanism provided; we will still send essential Service messages.
+- **Analytics and advertising.** You can opt out of Google Analytics with
+  Google's [browser add-on](https://tools.google.com/dlpage/gaoptout), block or
+  clear cookies in your browser, or use your browser's "Do Not Track"/tracking
+  protection. Opting out does not affect your ability to use the Service.
 
 Depending on where you live, you may have additional rights:
 
 - **California (CCPA/CPRA):** the right to know what personal information we
   collect and how we use and disclose it, the right to access and delete it, the
   right to correct inaccuracies, and the right not to be discriminated against for
-  exercising your rights. We do not sell or "share" personal information for
-  cross-context behavioral advertising.
+  exercising your rights. We do not sell personal information for money. Our use
+  of Google Analytics and Google Ads advertising cookies may be considered
+  "sharing" for cross-context behavioral advertising under some state laws; you
+  can opt out using the controls in Section 6 (including Google's opt-out add-on
+  and your browser's cookie settings).
 - **Other U.S. states (including Colorado, Connecticut, Utah, and Virginia):**
   you may have rights to access, correct, delete, and obtain a copy of your
-  personal data, and to opt out of targeted advertising and certain profiling. We
-  do not use your information for targeted advertising.
+  personal data, and to opt out of targeted advertising and certain profiling. See
+  Section 6 for how to opt out of our analytics and advertising cookies.
 
 To exercise any of these rights, contact us as described in Section 11. We may
 need to verify your identity before acting on a request, and we will respond

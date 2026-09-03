@@ -18,9 +18,28 @@
 	# exfiltrating the user's data to a third party. `script-src 'unsafe-eval'` is
 	# required by the recipe runtime AND by Arquero (both compile via Function).
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' https://www.googletagmanager.com https://www.googleadservices.com https://googleads.g.doubleclick.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google-analytics.com https://*.google-analytics.com https://www.google.com https://googleads.g.doubleclick.net; font-src 'self' data:; connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.g.doubleclick.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# The recipe worker runs LLM- and shared-authored JavaScript, so it keeps the
+	# strict policy the document can no longer have: analytics needs `connect-src`
+	# opened to Google, but the sandbox must stay unable to reach the network at
+	# all. A worker takes the CSP of its own script response, so scoping the
+	# header to that file keeps the exfiltration boundary intact. (The worker also
+	# deletes fetch/XHR/WebSocket from its global scope at startup — this is the
+	# belt to that's braces.)
+	# Deliberately minimal — ONLY `connect-src 'none'`. Adding `default-src` here
+	# would also constrain script/worker loading and risks breaking recipe
+	# execution for no extra benefit; the goal is purely "this context cannot
+	# talk to the network".
+	# `defer` is required: without it the site-wide header block above wins and
+	# the worker would inherit the (Google-permitting) document policy.
+	@recipe_worker path_regexp wk ^/assets/jsWorker-.*\.js$
+	header @recipe_worker {
+		Content-Security-Policy "connect-src 'none'"
+		defer
 	}
 
 	# Canonicalize www -> apex. No-op unless APEX is set (default host never matches).
