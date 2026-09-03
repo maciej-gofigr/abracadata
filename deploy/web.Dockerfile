@@ -15,7 +15,9 @@ ENV VITE_AUTH_ENABLED=$VITE_AUTH_ENABLED
 # rather than coming from CI — one less thing to configure, and no silent
 # "analytics quietly off because a variable was unset".
 ARG VITE_GA_MEASUREMENT_ID="G-424CLHS8GK"
-ARG VITE_ADS_CONVERSION_ID=""
+# Google Ads base tag. Like the GA id, not a secret — it ships in the page
+# source of every site that uses it.
+ARG VITE_ADS_CONVERSION_ID="AW-18399245345"
 ARG VITE_ADS_LABEL_SAVE_RECIPE=""
 ARG VITE_ADS_LABEL_SIGN_UP=""
 ENV VITE_GA_MEASUREMENT_ID=$VITE_GA_MEASUREMENT_ID \

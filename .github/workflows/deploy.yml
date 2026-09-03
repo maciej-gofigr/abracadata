@@ -115,7 +115,6 @@ jobs:
           file: deploy/web.Dockerfile
           push: true
           build-args: |
-            VITE_ADS_CONVERSION_ID=${{ vars.ADS_CONVERSION_ID }}
             VITE_ADS_LABEL_SAVE_RECIPE=${{ vars.ADS_LABEL_SAVE_RECIPE }}
             VITE_ADS_LABEL_SIGN_UP=${{ vars.ADS_LABEL_SIGN_UP }}
           cache-from: type=gha
