@@ -602,3 +602,7 @@ tbody tr:last-child td { border-bottom: none; }
 /* "AI-powered" chip — the gold spark marks it as the magic, not a status pill */
 .chip.chip-ai { border-color: color-mix(in srgb, var(--spark) 34%, transparent); background: var(--spark-tint); color: var(--ink); }
 .chip.chip-ai svg { color: var(--spark); }
+
+/* the brand is a link home — keep it looking like the wordmark, not a link */
+a.brand { text-decoration: none; color: inherit; }
+a.brand:hover .brand-name, a.brand:hover span { color: var(--accent); }

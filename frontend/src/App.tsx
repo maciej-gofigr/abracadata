@@ -169,6 +169,12 @@ export function App() {
     }
   }
 
+  /** Logo/home navigation. Routes to "/" without clearing loaded files, so
+   * clicking the logo mid-session never throws away the user's work. */
+  function goHome() {
+    navTo("/");
+  }
+
   // Client-side nav for in-app links (footer, back links).
   function navTo(path: string) {
     window.history.pushState({}, "", path);
@@ -577,13 +583,6 @@ export function App() {
   // "Save a copy" from a shared recipe / template -> a new recipe in the library.
   async function saveSharedCopy(paramValues: ParamValues, ins: InputFile[]): Promise<string | null> {
     if (!applyState) return null;
-    if (AUTH_ENABLED && !user) {
-      // Re-runs the copy itself once signed in, so the click isn't wasted.
-      pendingSave.current = async () => { await saveSharedCopy(paramValues, ins); };
-      track("save_intent", { source: applyState.mode });
-      setAuthOpen(true);
-      throw new Error("Sign in to save this to your library — we'll finish saving right after.");
-    }
     const r = applyState.recipe;
     const d = await createRecipe({
       name: applyState.mode === "template" ? r.name : `${r.name} (copy)`,
@@ -887,7 +886,7 @@ export function App() {
   return (
     <>
       <div className="topbar">
-        <div className="brand">
+        <a className="brand" href="/" aria-label="Abracadata — home" onClick={(e) => { e.preventDefault(); goHome(); }}>
           {/* "Framed" mark: a rounded tile of data cells, one turned to a gold spark */}
           <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true" shapeRendering="geometricPrecision">
             <rect x="3.4" y="3.4" width="25.2" height="25.2" rx="7" fill="var(--accent-tint)" stroke="var(--accent)" strokeWidth="1.7" />
@@ -897,7 +896,7 @@ export function App() {
             <path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="var(--spark)" stroke="var(--spark)" strokeWidth="0.35" strokeLinejoin="round" />
           </svg>
           <span>{APP_NAME}</span>
-        </div>
+        </a>
         <div className="spacer" />
         <span className="chip chip-ai">
           <svg width="13" height="13" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="currentColor" /><path d="M9.5 17 Q10 19.4 12.4 19.9 Q10 20.4 9.5 22.8 Q9 20.4 6.6 19.9 Q9 19.4 9.5 17 Z" fill="currentColor" /></svg>
@@ -936,6 +935,7 @@ export function App() {
             onEdit={applyState.mode === "owner" ? editFromApply : undefined}
             onSaveCopy={applyState.mode !== "owner" ? saveSharedCopy : undefined}
             canSave={!AUTH_ENABLED || Boolean(user)}
+            onRequestSignIn={() => { track("save_intent", { source: applyState.mode }); setAuthOpen(true); }}
             onExit={exitApply}
           />
         )}
@@ -957,7 +957,7 @@ export function App() {
               <span className="brand-hero-name">{APP_NAME}</span>
             </div>
             <div className="eyebrow">For the spreadsheet you rebuild every month</div>
-            <h1>Describe it once. <em>Re-run it forever.</em></h1>
+            <h1>Describe it once. <em>AI writes the code.</em> Re-run it forever.</h1>
             <p className="lede">
               Drop your CSV or Excel files and say what you need in plain English — join them, clean them,
               summarize, chart. You get a reusable recipe that does the exact same thing to next month's files.

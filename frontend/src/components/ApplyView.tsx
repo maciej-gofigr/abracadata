@@ -34,14 +34,17 @@ export function ApplyView({
   onEdit,
   onSaveCopy,
   canSave = true,
+  onRequestSignIn,
   onExit,
 }: {
   recipe: ApplyRecipe;
   mode: "owner" | "shared" | "template";
   onEdit?: (inputs: InputFile[], paramValues: ParamValues) => void;
   onSaveCopy?: (paramValues: ParamValues, inputs: InputFile[]) => Promise<string | null>;
-  /** False when saving will first prompt for sign-in (labels the button honestly). */
+  /** False when saving requires signing in first (labels the button honestly). */
   canSave?: boolean;
+  /** Opens the sign-in modal; the save resumes here once `canSave` turns true. */
+  onRequestSignIn?: () => void;
   onExit: () => void;
 }) {
   // A recipe should always have at least one slot to drop a file into, even if
@@ -65,6 +68,8 @@ export function ApplyView({
   const [runError, setRunError] = useState<string | null>(null);
   const [slotError, setSlotError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // A save the user asked for while signed out, waiting on the sign-in modal.
+  const [pendingCopy, setPendingCopy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
 
@@ -173,8 +178,27 @@ export function ApplyView({
     }
   }
 
+  // Finish a save that was waiting on sign-in, as soon as we're signed in.
+  useEffect(() => {
+    if (pendingCopy && canSave) {
+      setPendingCopy(false);
+      void saveCopy();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCopy, canSave]);
+
   async function saveCopy() {
     if (!onSaveCopy || saving) return;
+    if (!canSave) {
+      // Resumed by the effect below once sign-in completes. Gating here (rather
+      // than inside the parent's save handler) keeps it reacting to the CURRENT
+      // auth state — a deferred call captured in the parent would re-check the
+      // stale `user` from before sign-in and bounce the user back to the modal.
+      setPendingCopy(true);
+      setSaveMsg(null);
+      onRequestSignIn?.();
+      return;
+    }
     setSaving(true);
     try {
       const name = await onSaveCopy(paramValues, loadedInputs());
