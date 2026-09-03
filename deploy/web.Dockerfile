@@ -5,9 +5,9 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-# Anonymous-only for the POC (sign-in hidden until SES is wired). Flip to true
-# once email delivery exists.
-ARG VITE_AUTH_ENABLED=false
+# Sign-in is live: SES delivers the one-time codes (see docs/DEPLOY.md §6) and
+# /auth/request is rate-limited. Set to false to hide the sign-in UI again.
+ARG VITE_AUTH_ENABLED=true
 ENV VITE_AUTH_ENABLED=$VITE_AUTH_ENABLED
 # tsc + vite build + prerender (dist/ includes the /t/{slug} + /templates SEO pages).
 RUN npm run build

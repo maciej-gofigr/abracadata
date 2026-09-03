@@ -16,9 +16,10 @@ Internet ─HTTPS─▶ Caddy ── /            → static SPA + prerendered S
 ```
 
 Decisions baked in (all one flag to change later):
-- **Auth: anonymous-only.** The web image is built with `VITE_AUTH_ENABLED=false`
-  so "Sign in" is hidden (passwordless sign-in needs SES first). Flip the build
-  arg in `deploy/web.Dockerfile` when SES is wired.
+- **Auth: anonymous-first, sign-in enabled.** Accounts are optional — everything
+  works anonymously — and passwordless sign-in is live (SES delivers the codes,
+  §6). Set `VITE_AUTH_ENABLED=false` in `deploy/web.Dockerfile` to hide the
+  sign-in UI again.
 - **DB: Postgres container** on a volume. Same dialect as RDS, so migrating later
   is just a `DATABASE_URL` change + a `pg_dump | pg_restore`.
 
