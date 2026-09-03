@@ -20,7 +20,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history, so a leak in any commit is caught
+
+      # Secrets by content (patterns), across all history.
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
+
+      # Files that are dangerous by type even without a matching pattern —
+      # Terraform state, .env, private keys, database dumps.
+      - name: No forbidden file types committed
+        run: ./scripts/check-forbidden-files.sh tracked

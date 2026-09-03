@@ -7,6 +7,14 @@
 # Docker image. Install the binary: https://github.com/gitleaks/gitleaks/releases
 set -euo pipefail
 
+# 1. Files that are dangerous by type (state, .env, keys) — pattern scanners
+#    don't reliably flag these, and the repo is public.
+REPO_ROOT=$(git rev-parse --show-toplevel)
+if [ -x "$REPO_ROOT/scripts/check-forbidden-files.sh" ]; then
+	"$REPO_ROOT/scripts/check-forbidden-files.sh" staged >/dev/null || exit 1
+fi
+
+# 2. Secrets by content.
 GITLEAKS_ARGS=(git --staged --pre-commit --redact --no-banner --verbose)
 
 if command -v gitleaks >/dev/null 2>&1; then

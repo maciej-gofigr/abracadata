@@ -59,8 +59,18 @@ git config core.hooksPath .githooks
 #   https://github.com/gitleaks/gitleaks/releases   (or `brew install gitleaks`)
 ```
 
-The hook scans only the staged diff. To sweep full history (e.g. before making the repo public):
-`gitleaks git`. Rules and allowlists live in `.gitleaks.toml`.
+The hook scans only the staged diff. To sweep full history: `gitleaks git`. Rules and allowlists
+live in `.gitleaks.toml`.
+
+Two complementary layers run both locally (pre-commit) and in CI:
+
+| Check | Catches |
+|---|---|
+| **gitleaks** | secrets by *content* — AWS keys, tokens, PEM blocks — across all history |
+| **`scripts/check-forbidden-files.sh`** | files dangerous by *type* — `.tfstate`, `.env`, private keys, DB dumps — which pattern scanners miss (`*.example` is allowed) |
+
+The repo is public, so GitHub's own **secret scanning + push protection** are enabled too; they block a
+push containing a recognized provider secret and notify the provider to revoke it.
 
 ## Architecture
 
