@@ -157,7 +157,9 @@ main { padding: clamp(16px, 3vw, 32px) clamp(16px, 4vw, 40px) 72px; max-width: 1
 .landing { max-width: 760px; margin: min(6vh, 56px) auto 0; }
 .eyebrow { font-size: 12px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--spark); font-weight: 700; margin-bottom: 16px; }
 h1 { font-family: var(--display); font-optical-sizing: auto; font-size: clamp(30px, 5.2vw, 48px); line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 16px; text-wrap: balance; font-weight: 600; }
-h1 em { font-family: var(--display); font-style: italic; font-weight: 500; color: var(--accent); }
+/* accent phrase in the hero: violet, but the SAME face/weight as the rest of
+   the headline — switching to the display serif mid-sentence was too loud. */
+h1 em { font-family: inherit; font-style: inherit; font-weight: inherit; color: var(--accent); }
 .lede { font-size: clamp(15px, 2.2vw, 18px); color: var(--muted); max-width: 60ch; margin: 0 0 28px; }
 .dropzone {
   border: 1.5px dashed var(--line-strong); border-radius: 16px; background: var(--surface);
