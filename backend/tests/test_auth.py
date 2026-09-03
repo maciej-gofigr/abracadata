@@ -80,9 +80,9 @@ def _make_recipe(client: TestClient, name: str) -> str:
 
 def test_me_anonymous_then_signed_in(app: FastAPI) -> None:
     client = TestClient(app)
-    assert client.get("/auth/me").json() == {"email": None}
+    assert client.get("/auth/me").json() == {"email": None, "is_admin": False}
     _sign_in(client, "Alice@Example.com ")  # normalization: trims + lowercases
-    assert client.get("/auth/me").json() == {"email": "alice@example.com"}
+    assert client.get("/auth/me").json() == {"email": "alice@example.com", "is_admin": False}
 
 
 def test_bad_code_rejected(app: FastAPI) -> None:
@@ -130,8 +130,8 @@ def test_logout_detaches_browser(app: FastAPI) -> None:
     _make_recipe(client, "Kept on the account")
     assert len(client.get("/recipes").json()) == 1
 
-    assert client.post("/auth/logout").json() == {"email": None}
-    assert client.get("/auth/me").json() == {"email": None}
+    assert client.post("/auth/logout").json() == {"email": None, "is_admin": False}
+    assert client.get("/auth/me").json() == {"email": None, "is_admin": False}
     # Detached browser is anonymous again and no longer sees the account's recipes.
     assert client.get("/recipes").json() == []
 
@@ -246,3 +246,24 @@ def test_rate_limited_response_is_friendly_and_retryable(app: FastAPI, monkeypat
     assert "try again in" in detail.lower()
     assert "429" not in detail                     # no raw status leaking to users
     assert int(r.headers["Retry-After"]) > 0
+
+
+def test_is_admin_surfaces_but_is_never_settable_by_the_client(app: FastAPI) -> None:
+    """The UI needs the flag; the API must not let anyone grant it to themselves."""
+    from sqlalchemy import select
+
+    from app.models import User
+
+    client = TestClient(app)
+    # A normal account is not an admin, and can't ask to be one.
+    _sign_in(client, "normal@example.com")
+    assert client.get("/auth/me").json()["is_admin"] is False
+    client.post("/auth/request", json={"email": "normal@example.com", "is_admin": True})
+    assert client.get("/auth/me").json()["is_admin"] is False
+
+    # Granted out of band (as `python -m app.admin grant` does), it surfaces.
+    db = _TestSession()
+    db.execute(select(User).where(User.email == "normal@example.com")).scalar_one().is_admin = True
+    db.commit()
+    db.close()
+    assert client.get("/auth/me").json()["is_admin"] is True

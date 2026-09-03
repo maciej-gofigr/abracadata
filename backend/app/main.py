@@ -11,10 +11,15 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi import Depends
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.admin_api import router as admin_router
 from app.auth import router as auth_router
-from app.db import init_db
+from sqlalchemy.orm import Session
+
+from app import flags
+from app.db import get_db, init_db
 from app.generate import router as generate_router
 from app.recipes import router as recipes_router
 
@@ -45,6 +50,13 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/status")
+def status(db: Session = Depends(get_db)) -> dict[str, bool]:
+    """Public service state, so the UI can explain itself when a switch is off."""
+    return {"llm_enabled": flags.llm_enabled(db)}
+
+
+app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(generate_router)
 app.include_router(recipes_router)

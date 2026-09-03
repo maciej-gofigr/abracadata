@@ -24,9 +24,13 @@ from typing import Any, Iterator
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app import flags
+from app.db import get_db
 
 router = APIRouter()
 
@@ -517,10 +521,12 @@ def _parse_suggestions(text: str) -> list[str]:
 
 
 @router.post("/suggest")
-def suggest(req: SuggestRequest) -> dict[str, list[str]]:
+def suggest(req: SuggestRequest, db: Session = Depends(get_db)) -> dict[str, list[str]]:
     """Best-effort: returns [] on any failure so it never blocks the UI."""
     if not req.inputs:
         return {"suggestions": []}
+    if not flags.llm_enabled(db):
+        return {"suggestions": []}  # kill switch: never spend on a suggestion
     if os.environ.get("MOCK_GENERATE"):
         return {"suggestions": ["Total the amount by region", "Show the top 10 rows by amount", "Count rows per category"]}
     prompt = f"Loaded tables:\n{_schema_lines(req.inputs)}\n\nSuggest 3-4 things to do. JSON array of strings only."
@@ -572,7 +578,16 @@ _MOCK_PARAMS = [
 
 
 @router.post("/generate")
-def generate(req: GenerateRequest) -> StreamingResponse:
+def generate(req: GenerateRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    if not flags.llm_enabled(db):
+        # Kill switch (admin): stop before any billable call is made.
+        def disabled() -> Iterator[str]:
+            yield _sse({
+                "type": "error",
+                "error": "Recipe generation is paused right now. Your files and saved recipes are unaffected — please try again a little later.",
+            })
+        return StreamingResponse(disabled(), media_type="text/event-stream")
+
     if os.environ.get("MOCK_GENERATE"):
         def mock() -> Iterator[str]:
             yield _sse({"text": "Joining orders to customers and charting revenue share by segment."})

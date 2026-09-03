@@ -52,3 +52,21 @@ resource "aws_iam_role_policy" "ses_send" {
     }]
   })
 }
+
+
+# Read-only Cost Explorer access so the admin page can show month-to-date spend.
+# NOTE: ce:GetCostAndUsage is billed per request (~$0.01), so the app caches the
+# result rather than calling it on every page load.
+resource "aws_iam_role_policy" "cost_explorer" {
+  name = "cost-explorer-read"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ce:GetCostAndUsage"]
+      Resource = "*"
+    }]
+  })
+}

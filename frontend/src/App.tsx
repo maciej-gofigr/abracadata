@@ -16,6 +16,7 @@ import {
   addVersion,
   authLogout,
   authMe,
+  serviceStatus,
   createRecipe,
   deleteRecipe,
   explanationOnly,
@@ -40,6 +41,7 @@ import { ApplyView, type ApplyRecipe } from "./components/ApplyView";
 import { GalleryPage, GALLERY_DESC } from "./components/GalleryPage";
 import { RecipePanel } from "./components/RecipePanel";
 import { LegalView } from "./components/LegalView";
+import { AdminPage } from "./components/AdminPage";
 import { TEMPLATES, templateBySlug, type Template } from "./lib/templates";
 import type { InputFile, RecipeMeta, RecipeParam, RecipeStep, RunResult } from "./types";
 
@@ -91,6 +93,7 @@ export function App() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [user, setUser] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   // Saving requires an account. When a signed-out user asks to save we stash the
   // save here, open the sign-in modal, and run it once they're in — so their
@@ -100,6 +103,9 @@ export function App() {
   const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared" | "template"; recipeId?: string } | null>(null);
   const [showGallery, setShowGallery] = useState(false);
   const [legalDoc, setLegalDoc] = useState<"terms" | "privacy" | null>(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+  // Public service state: when AI generation is paused we tell visitors why.
+  const [llmEnabled, setLlmEnabled] = useState(true);
   const [sharePanelId, setSharePanelId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
@@ -108,7 +114,8 @@ export function App() {
     initAnalytics(); // sends the initial page_view; SPA navigation sends its own
     dataWorker.warmUp();
     void refreshLibrary();
-    if (AUTH_ENABLED) void authMe().then((r) => setUser(r.email)).catch(() => {});
+    if (AUTH_ENABLED) void authMe().then((r) => { setUser(r.email); setIsAdmin(r.is_admin); }).catch(() => {});
+    void serviceStatus().then((s) => setLlmEnabled(s.llm_enabled)).catch(() => {});
     applyRoute(window.location.pathname);
     const onPop = () => applyRoute(window.location.pathname);
     window.addEventListener("popstate", onPop);
@@ -126,7 +133,14 @@ export function App() {
   function applyRoute(path: string) {
     const shared = path.match(/^\/s\/([^/]+)/);
     const tpl = path.match(/^\/t\/([^/]+)/);
-    if (path === "/terms" || path === "/privacy") {
+    if (path === "/admin") {
+      setApplyState(null);
+      setShowGallery(false);
+      setLegalDoc(null);
+      setShowAdmin(true);
+      setMeta(`Admin — ${APP_NAME}`, "Admin controls.");
+    } else if (path === "/terms" || path === "/privacy") {
+      setShowAdmin(false);
       const d = path === "/terms" ? "terms" : "privacy";
       setApplyState(null);
       setShowGallery(false);
@@ -139,6 +153,7 @@ export function App() {
       );
     } else if (shared) {
       setLegalDoc(null);
+      setShowAdmin(false);
       setShowGallery(false);
       void getSharedRecipe(decodeURIComponent(shared[1]))
         .then((s) => {
@@ -148,6 +163,7 @@ export function App() {
         .catch((err) => setFileError(err instanceof Error ? err.message : String(err)));
     } else if (tpl) {
       setLegalDoc(null);
+      setShowAdmin(false);
       const t = templateBySlug(decodeURIComponent(tpl[1]));
       setShowGallery(false);
       if (t) {
@@ -158,11 +174,13 @@ export function App() {
       }
     } else if (path === "/templates") {
       setLegalDoc(null);
+      setShowAdmin(false);
       setApplyState(null);
       setShowGallery(true);
       setMeta(`Templates — ${APP_NAME}`, GALLERY_DESC);
     } else {
       setLegalDoc(null);
+      setShowAdmin(false);
       setApplyState(null);
       setShowGallery(false);
       setMeta(APP_TITLE, APP_TAGLINE);
@@ -691,8 +709,9 @@ export function App() {
     }
   }
 
-  async function onSignedIn(email: string) {
+  async function onSignedIn(email: string, admin = false) {
     setUser(email);
+    setIsAdmin(admin);
     setAuthOpen(false);
     // Passwordless sign-in is the same flow for a new and returning account, so
     // this is reported as sign_up (the acquisition conversion) plus login.
@@ -711,6 +730,7 @@ export function App() {
       /* ignore */
     }
     setUser(null);
+    setIsAdmin(false);
     setCurrentRecipeId(null);
     setVersions([]);
     await refreshLibrary();
@@ -912,6 +932,9 @@ export function App() {
         {AUTH_ENABLED &&
           (user ? (
             <span className="account">
+              {isAdmin && (
+                <button className="admin-badge" title="Admin controls" onClick={() => navTo("/admin")}>Admin</button>
+              )}
               <span className="account-email" title={user}>{user}</span>
               <button className="btn ghost" onClick={signOut}>Sign out</button>
             </span>
@@ -926,9 +949,21 @@ export function App() {
       {AUTH_ENABLED && authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSignedIn={onSignedIn} />}
 
       <main>
-        {legalDoc && <LegalView doc={legalDoc} onHome={() => navTo("/")} />}
+        {!llmEnabled && (
+          <div className="outage-banner" role="status">
+            <strong>Abracadata is having trouble right now.</strong> Creating new recipes with AI is
+            temporarily unavailable — we're on it. Your files and saved recipes are unaffected, and
+            saved recipes still run normally in your browser.
+          </div>
+        )}
 
-        {!legalDoc && applyState && (
+        {showAdmin && (isAdmin
+          ? <AdminPage onHome={() => navTo("/")} />
+          : <section className="legal"><p className="lede">Not found.</p></section>)}
+
+        {!showAdmin && legalDoc && <LegalView doc={legalDoc} onHome={() => navTo("/")} />}
+
+        {!showAdmin && !legalDoc && applyState && (
           <ApplyView
             recipe={applyState.recipe}
             mode={applyState.mode}
@@ -940,11 +975,11 @@ export function App() {
           />
         )}
 
-        {!legalDoc && !applyState && showGallery && (
+        {!showAdmin && !legalDoc && !applyState && showGallery && (
           <GalleryPage onOpen={openTemplate} onHome={exitApply} />
         )}
 
-        {!legalDoc && !applyState && !showGallery && !hasInputs && (
+        {!showAdmin && !legalDoc && !applyState && !showGallery && !hasInputs && (
           <section className="landing">
             <div className="brand-hero">
               <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" shapeRendering="geometricPrecision">
@@ -1021,7 +1056,7 @@ export function App() {
           </section>
         )}
 
-        {!legalDoc && !applyState && !showGallery && hasInputs && (
+        {!showAdmin && !legalDoc && !applyState && !showGallery && hasInputs && (
           <>
             <div className="header-row">
               <h2 className="page-title">{currentRecipeName || "Untitled recipe"}</h2>

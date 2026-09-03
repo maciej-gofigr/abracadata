@@ -128,6 +128,9 @@ class VerifyBody(BaseModel):
 
 class MeResponse(BaseModel):
     email: Optional[str] = None
+    # Elevated access, set out of band (`python -m app.admin grant`). Exposed so
+    # the UI can reflect it; it is never accepted as input.
+    is_admin: bool = False
 
 
 class RequestResponse(BaseModel):
@@ -250,12 +253,13 @@ def verify_code(
         recipe.owner_anon_id = None
     session.user_id = user.id
     db.commit()
-    return MeResponse(email=user.email)
+    return MeResponse(email=user.email, is_admin=bool(user.is_admin))
 
 
 @router.get("/me", response_model=MeResponse)
 def me(principal: Principal = Depends(get_principal)) -> MeResponse:
-    return MeResponse(email=principal.user.email if principal.user else None)
+    user = principal.user
+    return MeResponse(email=user.email if user else None, is_admin=bool(user and user.is_admin))
 
 
 @router.post("/logout", response_model=MeResponse)

@@ -1,9 +1,40 @@
 import json
+import os
+import tempfile
+from typing import Iterator
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 import app.generate as generate
+from app.db import Base, get_db
 from app.main import app
+
+# /generate and /suggest read the LLM kill switch, so they need a database.
+# Point them at a throwaway one: without this the tests would read whatever
+# sqlite file happens to be on the machine — passing or failing depending on a
+# developer's local flag state, and erroring in CI where no such file exists.
+_TMP_DB = os.path.join(tempfile.mkdtemp(prefix="api_test_"), "test.db")
+_engine = create_engine(f"sqlite:///{_TMP_DB}", connect_args={"check_same_thread": False}, future=True)
+_TestSession = sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
+
+# NB: `from app import models`, not `import app.models` — the latter rebinds the
+# name `app` to the package and shadows the FastAPI instance imported above.
+from app import models as _models  # noqa: E402,F401  (registers tables)
+
+Base.metadata.create_all(bind=_engine)
+
+
+def _override_get_db() -> Iterator[Session]:
+    db = _TestSession()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+app.dependency_overrides[get_db] = _override_get_db
 
 client = TestClient(app)
 

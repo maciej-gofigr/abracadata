@@ -23,8 +23,10 @@ export function suggestPrompts(
 
 // ---------- auth (passwordless email code) ----------
 
-export function authMe(): Promise<{ email: string | null }> {
-  return fetch("/api/auth/me", { credentials: "include" }).then(j<{ email: string | null }>);
+export interface AuthState { email: string | null; is_admin: boolean }
+
+export function authMe(): Promise<AuthState> {
+  return fetch("/api/auth/me", { credentials: "include" }).then(j<AuthState>);
 }
 
 /** FastAPI puts a human-readable reason in `detail`; prefer it over a bare status
@@ -55,7 +57,7 @@ export function authRequest(email: string): Promise<{ sent: boolean; dev_code: s
   });
 }
 
-export function authVerify(email: string, code: string): Promise<{ email: string | null }> {
+export function authVerify(email: string, code: string): Promise<AuthState> {
   return fetch("/api/auth/verify", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -71,10 +73,8 @@ export function authVerify(email: string, code: string): Promise<{ email: string
   });
 }
 
-export function authLogout(): Promise<{ email: string | null }> {
-  return fetch("/api/auth/logout", { method: "POST", credentials: "include" }).then(
-    j<{ email: string | null }>,
-  );
+export function authLogout(): Promise<AuthState> {
+  return fetch("/api/auth/logout", { method: "POST", credentials: "include" }).then(j<AuthState>);
 }
 
 // ---------- recipe library (persistence + versioning) ----------
@@ -194,4 +194,40 @@ export async function getSharedRecipe(token: string): Promise<SharedRecipe> {
   if (r.status === 404) throw new Error("This shared recipe wasn't found — the link may have been revoked.");
   if (!r.ok) throw new Error(`Couldn't load the shared recipe (${r.status}).`);
   return r.json();
+}
+
+// ---------- admin (all routes 404 for non-admins) ----------
+
+export interface AdminFlags { llm_enabled: boolean; updated_at: string | null; updated_by: string | null }
+export interface AdminStats { users: number; recipes: number; codes_last_hour: number }
+export interface AdminCosts {
+  month: string; total: number; currency: string;
+  by_service: { service: string; amount: number }[];
+  cached_at: string; error?: string | null;
+}
+
+export function adminFlags(): Promise<AdminFlags> {
+  return fetch("/api/admin/flags", { credentials: "include" }).then(j<AdminFlags>);
+}
+
+export function adminSetLlm(enabled: boolean): Promise<AdminFlags> {
+  return fetch("/api/admin/flags/llm", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ enabled }),
+  }).then(j<AdminFlags>);
+}
+
+export function adminStats(): Promise<AdminStats> {
+  return fetch("/api/admin/stats", { credentials: "include" }).then(j<AdminStats>);
+}
+
+export function adminCosts(): Promise<AdminCosts> {
+  return fetch("/api/admin/costs", { credentials: "include" }).then(j<AdminCosts>);
+}
+
+/** Public service state — drives the "we're having trouble" banner. */
+export function serviceStatus(): Promise<{ llm_enabled: boolean }> {
+  return fetch("/api/status").then(j<{ llm_enabled: boolean }>);
 }

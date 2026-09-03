@@ -9,7 +9,7 @@ export function AuthModal({
   onSignedIn,
 }: {
   onClose: () => void;
-  onSignedIn: (email: string) => void | Promise<void>;
+  onSignedIn: (email: string, isAdmin: boolean) => void | Promise<void>;
 }) {
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
@@ -50,7 +50,7 @@ export function AuthModal({
     setError(null);
     try {
       const r = await authVerify(email.trim(), code.trim());
-      await onSignedIn(r.email ?? email.trim());
+      await onSignedIn(r.email ?? email.trim(), Boolean(r.is_admin));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

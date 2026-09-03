@@ -38,6 +38,22 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
+class Setting(Base):
+    """Server-side switches, editable at runtime by an admin.
+
+    In the database rather than the environment so a change takes effect
+    immediately — the LLM kill switch exists for a cost/abuse spike, and
+    "redeploy to turn it off" is useless in that moment.
+    """
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
+
+
 class LoginCode(Base):
     """A short-lived, single-use email verification code (stored hashed)."""
 
