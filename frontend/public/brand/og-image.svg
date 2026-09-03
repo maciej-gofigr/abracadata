@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" shape-rendering="geometricPrecision">
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="1.15" fill="#6a2cd4" fill-opacity="0.07"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="#faf8f4"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <g transform="translate(232,214)">
+    <rect x="3.4" y="3.4" width="25.2" height="25.2" rx="7" fill="#f0e9fd" stroke="#6a2cd4" stroke-width="1.7" transform="scale(3.6)"/>
+    <g transform="scale(3.6)">
+      <rect x="8" y="8" width="6.4" height="6.4" rx="1.6" fill="#6a2cd4"/>
+      <rect x="8" y="17.6" width="6.4" height="6.4" rx="1.6" fill="#6a2cd4"/>
+      <rect x="17.6" y="17.6" width="6.4" height="6.4" rx="1.6" fill="#6a2cd4"/>
+      <path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="#c47d10" stroke="#c47d10" stroke-width="0.35" stroke-linejoin="round"/>
+    </g>
+  </g>
+  <text x="392" y="290" font-family="Hanken Grotesk" font-weight="800" font-size="86" letter-spacing="-3" fill="#211c2b">Abracadata</text>
+  <text x="396" y="345" font-family="Hanken Grotesk" font-weight="500" font-size="29" fill="#3f3a4b">For the spreadsheet you rebuild every month</text>
+  <text x="232" y="452" font-family="Hanken Grotesk" font-weight="500" font-size="27" fill="#6a2cd4">Describe it once. Re-run it forever.</text>
+  <text x="232" y="500" font-family="Hanken Grotesk" font-weight="400" font-size="23" fill="#6a6478">Runs entirely in your browser — your files never leave your machine.</text>
+</svg>

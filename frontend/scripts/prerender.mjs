@@ -33,12 +33,19 @@ function page(title, description, bodyHtml) {
   } else {
     html = html.replace("</head>", `<meta name="description" content="${esc(description)}"></head>`);
   }
+  // The shell (index.html) already carries default og/twitter tags; strip them so
+  // each route gets exactly one set with its own title/description.
+  html = html.replace(/\s*<meta (?:property="og:[^"]*"|name="twitter:[^"]*")[^>]*>/g, "");
   const og =
     `<meta property="og:title" content="${esc(title)}">` +
     `<meta property="og:description" content="${esc(description)}">` +
     `<meta property="og:type" content="website">` +
     `<meta property="og:site_name" content="Abracadata">` +
-    `<meta name="twitter:card" content="summary">`;
+    `<meta name="twitter:card" content="summary_large_image">` +
+    `<meta property="og:image" content="https://abracadata.me/og-image.png">` +
+    `<meta property="og:image:width" content="1200">` +
+    `<meta property="og:image:height" content="630">` +
+    `<meta name="twitter:image" content="https://abracadata.me/og-image.png">`;
   html = html.replace("</head>", og + "</head>");
   html = html.replace('<div id="root"></div>', `<div id="root"></div><noscript>${bodyHtml}</noscript>`);
   return html;

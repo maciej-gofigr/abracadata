@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 232 48" shape-rendering="geometricPrecision">
+<g transform="translate(6,8)">
+<rect x="3.4" y="3.4" width="25.2" height="25.2" rx="7" fill="#251d3a" stroke="#a685ff" stroke-width="1.7"/>
+<rect x="8" y="8" width="6.4" height="6.4" rx="1.6" fill="#a685ff"/>
+<rect x="8" y="17.6" width="6.4" height="6.4" rx="1.6" fill="#a685ff"/>
+<rect x="17.6" y="17.6" width="6.4" height="6.4" rx="1.6" fill="#a685ff"/>
+<path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="#f2b53d" stroke="#f2b53d" stroke-width="0.35" stroke-linejoin="round"/>
+</g>
+<text x="47" y="33" font-family="Hanken Grotesk" font-weight="800" font-size="30" letter-spacing="-0.9" fill="#ece8f4">Abracadata</text>
+</svg>
