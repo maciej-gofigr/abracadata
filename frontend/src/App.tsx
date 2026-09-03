@@ -101,8 +101,7 @@ export function App() {
   const [copiedShare, setCopiedShare] = useState(false);
 
   useEffect(() => {
-    initAnalytics();
-    trackPageView(window.location.pathname);
+    initAnalytics(); // sends the initial page_view; SPA navigation sends its own
     dataWorker.warmUp();
     void refreshLibrary();
     if (AUTH_ENABLED) void authMe().then((r) => setUser(r.email)).catch(() => {});

@@ -18,6 +18,16 @@ const ADS_LABELS: Record<string, string> = {
 
 type Params = Record<string, unknown>;
 
+// Opt into GA4 DebugView from a real browser session, for troubleshooting:
+//   https://abracadata.me/?ga_debug=1   (sticky; ?ga_debug=0 turns it off)
+const DEBUG = (() => {
+  if (typeof window === "undefined") return false;
+  const q = new URLSearchParams(window.location.search).get("ga_debug");
+  if (q === "1") localStorage.setItem("ga_debug", "1");
+  if (q === "0") localStorage.removeItem("ga_debug");
+  return localStorage.getItem("ga_debug") === "1";
+})();
+
 declare global {
   interface Window {
     dataLayer?: unknown[];
@@ -39,8 +49,12 @@ export function initAnalytics(): void {
     window.dataLayer!.push(arguments);
   };
   window.gtag("js", new Date());
-  // We send page_view manually so SPA route changes are counted correctly.
-  window.gtag("config", GA_ID, { send_page_view: false });
+  // Let `config` send the initial page_view (the default). GA4's "data
+  // collection is active" check keys off that automatic event, and suppressing
+  // it with send_page_view:false makes a correctly-firing install look dead.
+  // SPA route changes still send their own page_view via trackPageView(); only
+  // the first one comes from here, so nothing is double-counted.
+  window.gtag("config", GA_ID, DEBUG ? { debug_mode: true } : {});
   if (ADS_ID) window.gtag("config", ADS_ID);
 
   const s = document.createElement("script");
