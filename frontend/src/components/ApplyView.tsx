@@ -33,12 +33,15 @@ export function ApplyView({
   mode,
   onEdit,
   onSaveCopy,
+  canSave = true,
   onExit,
 }: {
   recipe: ApplyRecipe;
   mode: "owner" | "shared" | "template";
   onEdit?: (inputs: InputFile[], paramValues: ParamValues) => void;
   onSaveCopy?: (paramValues: ParamValues, inputs: InputFile[]) => Promise<string | null>;
+  /** False when saving will first prompt for sign-in (labels the button honestly). */
+  canSave?: boolean;
   onExit: () => void;
 }) {
   // A recipe should always have at least one slot to drop a file into, even if
@@ -285,7 +288,10 @@ export function ApplyView({
       <div className="apply-actions">
         {(mode === "shared" || mode === "template") && onSaveCopy && (
           <button className="btn primary" disabled={saving} onClick={saveCopy}>
-            {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : mode === "template" ? "Save to my library" : "Save a copy to my library"}
+            {saving
+              ? <><span className="spinner" aria-hidden="true" />Saving…</>
+              : !canSave ? "Sign up to save it"
+              : mode === "template" ? "Save to my library" : "Save a copy to my library"}
           </button>
         )}
         {mode === "owner" && onEdit && (

@@ -16,9 +16,9 @@ Internet ─HTTPS─▶ Caddy ── /            → static SPA + prerendered S
 ```
 
 Decisions baked in (all one flag to change later):
-- **Auth: anonymous-first, sign-in enabled.** Accounts are optional — everything
-  works anonymously — and passwordless sign-in is live (SES delivers the codes,
-  §6). Set `VITE_AUTH_ENABLED=false` in `deploy/web.Dockerfile` to hide the
+- **Auth: sign-in enabled, and required to save.** The app is fully usable signed
+  out (drop files, generate, run, download); saving to the library requires a
+  free account, which is also the sign-up funnel. Passwordless via SES (§6). Set `VITE_AUTH_ENABLED=false` in `deploy/web.Dockerfile` to hide the
   sign-in UI again.
 - **DB: Postgres container** on a volume. Same dialect as RDS, so migrating later
   is just a `DATABASE_URL` change + a `pg_dump | pg_restore`.

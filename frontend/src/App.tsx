@@ -92,6 +92,10 @@ export function App() {
 
   const [user, setUser] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  // Saving requires an account. When a signed-out user asks to save we stash the
+  // save here, open the sign-in modal, and run it once they're in — so their
+  // recipe isn't silently dropped on the floor by the detour.
+  const pendingSave = useRef<null | (() => Promise<void>)>(null);
 
   const [applyState, setApplyState] = useState<{ recipe: ApplyRecipe; mode: "owner" | "shared" | "template"; recipeId?: string } | null>(null);
   const [showGallery, setShowGallery] = useState(false);
@@ -467,6 +471,17 @@ export function App() {
 
   async function saveToLibrary() {
     if (!script || saving) return;
+    if (AUTH_ENABLED && !user) {
+      pendingSave.current = doSaveToLibrary;
+      track("save_intent", { source: "workspace" });
+      setAuthOpen(true);
+      return;
+    }
+    await doSaveToLibrary();
+  }
+
+  async function doSaveToLibrary() {
+    if (!script || saving) return;
     const payload = {
       script,
       params,
@@ -562,6 +577,13 @@ export function App() {
   // "Save a copy" from a shared recipe / template -> a new recipe in the library.
   async function saveSharedCopy(paramValues: ParamValues, ins: InputFile[]): Promise<string | null> {
     if (!applyState) return null;
+    if (AUTH_ENABLED && !user) {
+      // Re-runs the copy itself once signed in, so the click isn't wasted.
+      pendingSave.current = async () => { await saveSharedCopy(paramValues, ins); };
+      track("save_intent", { source: applyState.mode });
+      setAuthOpen(true);
+      throw new Error("Sign in to save this to your library — we'll finish saving right after.");
+    }
     const r = applyState.recipe;
     const d = await createRecipe({
       name: applyState.mode === "template" ? r.name : `${r.name} (copy)`,
@@ -678,6 +700,9 @@ export function App() {
     trackConversion("sign_up", { method: "email_code" });
     track("login", { method: "email_code" });
     await refreshLibrary(); // ownership changed — show the account's library
+    const resume = pendingSave.current;
+    pendingSave.current = null;
+    if (resume) await resume(); // finish the save they came here to do
   }
 
   async function signOut() {
@@ -765,7 +790,7 @@ export function App() {
           <p className="reuse-hint">
             Next month, open one and drop your new files — it re-runs the same steps.
             {AUTH_ENABLED && !user && (
-              <> · <button className="linklike" onClick={() => setAuthOpen(true)}>Sign in</button> to reach these from any device.</>
+              <> · <button className="linklike" onClick={() => setAuthOpen(true)}>Create a free account</button> to save recipes and reach them from any device.</>
             )}
           </p>
           <ul className="recipe-list">
@@ -906,6 +931,7 @@ export function App() {
             mode={applyState.mode}
             onEdit={applyState.mode === "owner" ? editFromApply : undefined}
             onSaveCopy={applyState.mode !== "owner" ? saveSharedCopy : undefined}
+            canSave={!AUTH_ENABLED || Boolean(user)}
             onExit={exitApply}
           />
         )}
@@ -1271,10 +1297,16 @@ export function App() {
             {script && !currentRecipeId && (
               <div className="save-banner" role="status">
                 <span className="save-banner-text">
-                  <strong>Recipe ready — not saved yet.</strong> Save it to your library to re-run on next month's files.
+                  {AUTH_ENABLED && !user ? (
+                    <><strong>Recipe ready.</strong> Create a free account to keep it in your library and re-run it on next month's files.</>
+                  ) : (
+                    <><strong>Recipe ready — not saved yet.</strong> Save it to your library to re-run on next month's files.</>
+                  )}
                 </span>
                 <button className="btn primary" disabled={saving} onClick={saveToLibrary}>
-                  {saving ? <><span className="spinner" aria-hidden="true" />Saving…</> : "Save to library"}
+                  {saving
+                    ? <><span className="spinner" aria-hidden="true" />Saving…</>
+                    : AUTH_ENABLED && !user ? "Sign up to save" : "Save to library"}
                 </button>
               </div>
             )}

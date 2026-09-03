@@ -50,7 +50,7 @@ that's why tests use happy-dom (not jsdom) and why a clean `frontend/node_module
 
 Plain-language descriptions become deterministic **JavaScript** scripts ("recipes") that run **in the browser**.
 The backend generates recipe *text* (via Claude on Bedrock) and stores it; it never runs user code.
-Accounts are optional (anonymous-first). The data flow spans both packages:
+Using the app is anonymous; **saving** a recipe requires an account (the sign-up funnel). The data flow spans both packages:
 
 1. **File in** → `App.handleFiles` → `dataWorker.loadInput`, which parses CSV (Papa Parse) / Excel
    (SheetJS) in the web worker and returns a `TablePreview`. Files never leave the browser.
@@ -103,10 +103,13 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
   alternating roles and paired tool_use/tool_result, so the frontend records a *final* as a plain assistant
   turn (never a dangling `submit_recipe` call). `BEDROCK_MODEL` defaults to
   `us.anthropic.claude-opus-4-6-v1`; `MOCK_GENERATE=1` returns a canned recipe for offline/dev.
-- **Auth is passwordless + optional** (`backend/app/auth.py`): email → 6-digit code. The `anon_id` cookie
+- **Auth is passwordless** (`backend/app/auth.py`): email → 6-digit code. The `anon_id` cookie
   *is* the session (`backend/app/owner.py`); signing in links it to a `User` and **claims** the session's
   anonymous recipes. A recipe is owned by *either* an anon session or a user (`owner.py` resolves a
-  `Principal`; `recipes.py` scopes every route through it). `_send_code` sends via **SES** when `MAIL_FROM` is set (prod; creds from the
+  `Principal`; `recipes.py` scopes every route through it). **The UI gates saving behind sign-in** — a
+  signed-out save stashes the action in `pendingSave`, opens the auth modal, and resumes it in
+  `onSignedIn`, so the detour never drops the user's recipe. The API still accepts anonymous saves;
+  the gate (and the claim-on-sign-in path) is deliberately frontend-side. `_send_code` sends via **SES** when `MAIL_FROM` is set (prod; creds from the
   instance role) and otherwise logs the code; `AUTH_DEV_ECHO=1` also returns it in the response for
   local use. `/auth/request` is rate-limited (cooldown + per-email + per-IP) — it mails an address the
   *caller* supplies, so an unthrottled endpoint is an email-bombing vector that would wreck SES standing.

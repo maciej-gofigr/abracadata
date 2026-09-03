@@ -71,8 +71,7 @@ to operate, secure, and improve the Service.
 We use cookies and similar technologies in two ways:
 
 - **Essential.** An identifier stored on your device that maintains your session
-  and associates your saved recipes with you (including before you create an
-  account). The Service does not work without these.
+  and links your browser to your account. The Service does not work without these.
 - **Analytics and advertising.** We use Google Analytics and Google Ads to
   understand how the Service is used and to measure our advertising. These set
   cookies (for example `_ga` and `_gcl_*`) that help us count visitors, see which

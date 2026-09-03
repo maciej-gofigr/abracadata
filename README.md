@@ -13,7 +13,7 @@ Turn plain-language descriptions into **reusable data-transformation scripts**. 
 3. **See the result** — the recipe runs locally in the web worker; you get output tables and native Plotly charts. Tune the knobs and it re-runs instantly. Edit the code directly if you like.
 4. **Save & reuse** — recipes are saved and versioned server-side (text only, never your data). Next month, open a recipe and drop your new files — they're matched to the recipe's named slots by schema and it re-runs. You can also download the recipe as a `.js` file.
 
-**Accounts are optional.** Everything works anonymously (tied to a browser cookie). Sign in — passwordless, via an emailed code — to keep your recipes and reach them from any device; your anonymous recipes are claimed into the account on first sign-in.
+**Try it without an account.** Dropping files, generating a recipe, running it, and downloading the result all work signed out — nothing you open leaves your browser. **Saving a recipe to your library needs a free account** (passwordless, via an emailed code), so your work is durable and available on any device rather than tied to one browser's cookies.
 
 ## Repository layout
 
