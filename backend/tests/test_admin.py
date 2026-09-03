@@ -161,3 +161,33 @@ def test_cost_errors_are_not_cached_but_successes_are(app: FastAPI, monkeypatch)
     monkeypatch.setattr(admin_api, "_fetch_costs", _denied)
     r = admin.get("/admin/costs").json()
     assert r["total"] == 12.34 and r["error"] is None
+
+
+def test_refresh_bypasses_the_cost_cache(app: FastAPI, monkeypatch) -> None:
+    """The Refresh button must actually re-query, not re-serve the cached figure."""
+    import app.admin_api as admin_api
+
+    admin = TestClient(app)
+    _sign_in(admin, "refresh@example.com")
+    _make_admin("refresh@example.com")
+    admin_api._cost_cache["at"] = None
+    admin_api._cost_cache["data"] = None
+
+    calls = {"n": 0}
+
+    def _counting():
+        calls["n"] += 1
+        return admin_api.CostResponse(
+            month="September 2026", total=float(calls["n"]), currency="USD",
+            by_service=[], cached_at="now",
+        )
+
+    monkeypatch.setattr(admin_api, "_fetch_costs", _counting)
+
+    assert admin.get("/admin/costs").json()["total"] == 1.0   # first, live
+    assert admin.get("/admin/costs").json()["total"] == 1.0   # within TTL -> cached
+    assert calls["n"] == 1
+    assert admin.get("/admin/costs?refresh=true").json()["total"] == 2.0  # forced
+    assert calls["n"] == 2
+    assert admin.get("/admin/costs").json()["total"] == 2.0   # refresh reseeded the cache
+    assert calls["n"] == 2

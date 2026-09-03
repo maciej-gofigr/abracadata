@@ -11,6 +11,7 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [costs, setCosts] = useState<AdminCosts | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,6 +40,17 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
       setErr("Couldn't change the setting. Try again.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshCosts() {
+    setRefreshing(true);
+    try {
+      setCosts(await adminCosts(true));
+    } catch {
+      /* the panel keeps showing whatever it had */
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -87,6 +99,10 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
         <div className="card-header">
           <h2>AWS spend</h2>
           <span className="count">{costs?.month ?? "month to date"}</span>
+          <button className="btn ghost" disabled={refreshing} onClick={refreshCosts}
+            title="Fetch fresh figures from AWS (each lookup costs about a cent)">
+            {refreshing ? <><span className="spinner" aria-hidden="true" />Refreshing…</> : "Refresh"}
+          </button>
         </div>
         <div className="card-body">
           {!costs ? (
@@ -110,8 +126,9 @@ export function AdminPage({ onHome }: { onHome: () => void }) {
                 </tbody>
               </table>
               <p className="admin-meta">
-                Cached — AWS bills per cost query, so this refreshes a few times a day.
-                Usage can lag several hours behind real time.
+                Cached for an hour; <strong>Refresh</strong> fetches now (AWS bills about a
+                cent per lookup). Read {new Date(costs.cached_at).toLocaleString()}. AWS
+                usage data itself can lag several hours behind real time.
               </p>
             </>
           )}

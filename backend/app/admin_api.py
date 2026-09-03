@@ -61,9 +61,10 @@ class CostResponse(BaseModel):
     error: str | None = None
 
 
-# Cost Explorer bills roughly $0.01 per request, so cache aggressively — the
-# numbers only move a few times a day anyway.
-_COST_TTL = timedelta(hours=6)
+# Cost Explorer bills roughly $0.01 per request. An hour is a good balance: the
+# figures only move a few times a day, and admin traffic is a handful of loads,
+# so this is cents per month. /admin/costs?refresh=true bypasses it.
+_COST_TTL = timedelta(hours=1)
 _cost_cache: dict[str, Any] = {"at": None, "data": None}
 
 

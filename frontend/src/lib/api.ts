@@ -223,8 +223,9 @@ export function adminStats(): Promise<AdminStats> {
   return fetch("/api/admin/stats", { credentials: "include" }).then(j<AdminStats>);
 }
 
-export function adminCosts(): Promise<AdminCosts> {
-  return fetch("/api/admin/costs", { credentials: "include" }).then(j<AdminCosts>);
+/** `refresh` bypasses the server-side cache (each real lookup bills ~$0.01). */
+export function adminCosts(refresh = false): Promise<AdminCosts> {
+  return fetch(`/api/admin/costs${refresh ? "?refresh=true" : ""}`, { credentials: "include" }).then(j<AdminCosts>);
 }
 
 /** Public service state — drives the "we're having trouble" banner. */
