@@ -598,3 +598,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* a choice param whose saved value isn't a column in the dropped file */
 .param select.param-missing { border-color: var(--remove); background: var(--remove-tint); color: var(--ink); }
+
+/* "AI-powered" chip — the gold spark marks it as the magic, not a status pill */
+.chip.chip-ai { border-color: color-mix(in srgb, var(--spark) 34%, transparent); background: var(--spark-tint); color: var(--ink); }
+.chip.chip-ai svg { color: var(--spark); }

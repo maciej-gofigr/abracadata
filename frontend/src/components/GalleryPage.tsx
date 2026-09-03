@@ -1,7 +1,7 @@
 import { TEMPLATES, TEMPLATE_CATEGORIES, type Template } from "../lib/templates";
 
 export const GALLERY_DESC =
-  "Ready-made recipes for everyday spreadsheet chores — total by category, top N, monthly totals, VLOOKUP-style merges, find duplicates, reconcile two lists. Pick one, drop your file, get results. Runs in your browser.";
+  "Ready-made AI spreadsheet recipes for everyday chores — total by category, top N, monthly totals, VLOOKUP-style merges, find duplicates, reconcile two lists. Pick one, drop your file, get results. Runs in your browser.";
 
 /** Public, browsable template gallery (route: /templates). */
 export function GalleryPage({ onOpen, onHome }: { onOpen: (t: Template) => void; onHome: () => void }) {

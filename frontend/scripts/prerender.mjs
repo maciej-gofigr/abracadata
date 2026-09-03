@@ -54,7 +54,7 @@ function page(title, description, bodyHtml) {
 for (const t of templates) {
   const body =
     `<main><h1>${esc(t.name)}</h1><p>${esc(t.description)}</p>` +
-    `<p>${esc(t.category)} template · runs entirely in your browser — your data never leaves your machine.</p>` +
+    `<p>${esc(t.category)} template · an AI-written spreadsheet recipe that runs entirely in your browser — your data never leaves your machine.</p>` +
     `<p><a href="/">Abracadata</a> — describe a spreadsheet chore once, re-run it forever.</p></main>`;
   const dir = join(dist, "t", t.slug);
   mkdirSync(dir, { recursive: true });
@@ -66,7 +66,7 @@ const galleryBody =
   templates.map((t) => `<li><a href="/t/${t.slug}">${esc(t.name)}</a> — ${esc(t.description)}</li>`).join("") +
   `</ul></main>`;
 const galleryDesc =
-  "Ready-made spreadsheet recipes: total by category, top N, monthly totals, merge files, find duplicates, reconcile two lists. Pick one, drop your file, get results. Runs in your browser.";
+  "Ready-made AI spreadsheet recipes: total by category, top N, monthly totals, merge files, find duplicates, reconcile two lists. Pick one, drop your file, get results. Runs in your browser.";
 mkdirSync(join(dist, "templates"), { recursive: true });
 writeFileSync(join(dist, "templates", "index.html"), page("Templates — Abracadata", galleryDesc, galleryBody));
 
@@ -82,4 +82,20 @@ for (const d of legalDocs) {
   writeFileSync(join(dist, d.slug, "index.html"), page(`${d.title} — Abracadata`, d.desc, body));
 }
 
-console.log(`prerender: wrote ${templates.length} template pages + /templates gallery + ${legalDocs.length} legal pages`);
+// Home: the SPA shell has no crawlable content of its own, so give it a
+// <noscript> body as well. Ad landing-page relevance and organic indexing both
+// depend on the page actually stating what it does.
+const homeDesc =
+  "AI-powered spreadsheet automation. Describe what you need in plain English and AI writes a reusable " +
+  "recipe that cleans, joins, summarizes and charts your CSV and Excel files — running entirely in your browser.";
+const homeBody =
+  `<main><h1>Abracadata — AI spreadsheet automation</h1>` +
+  `<p>${esc(homeDesc)}</p>` +
+  `<p>Drop a CSV or Excel file, describe the work in plain English, and the AI writes a reusable recipe: ` +
+  `join files, clean messy columns, summarize, and chart. Save it and re-run the exact same steps on next ` +
+  `month's files — no re-prompting.</p>` +
+  `<p>Your files never leave your browser: the recipe runs locally on your machine.</p>` +
+  `<p><a href="/templates">Browse ready-made templates</a></p></main>`;
+writeFileSync(join(dist, "index.html"), page("Abracadata — AI spreadsheet automation", homeDesc, homeBody));
+
+console.log(`prerender: wrote home + ${templates.length} template pages + /templates gallery + ${legalDocs.length} legal pages`);

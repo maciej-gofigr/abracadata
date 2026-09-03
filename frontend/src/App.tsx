@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { APP_NAME, APP_TAGLINE } from "./branding";
+import { APP_NAME, APP_TAGLINE, APP_TITLE } from "./branding";
 import { AuthModal } from "./components/AuthModal";
 import { DataTable } from "./components/DataTable";
 import { DropZone } from "./components/DropZone";
@@ -165,7 +165,7 @@ export function App() {
       setLegalDoc(null);
       setApplyState(null);
       setShowGallery(false);
-      setMeta(APP_NAME, APP_TAGLINE);
+      setMeta(APP_TITLE, APP_TAGLINE);
     }
   }
 
@@ -569,7 +569,7 @@ export function App() {
     if (onDeepLink) {
       window.history.pushState({}, "", "/");
       trackPageView("/");
-      setMeta(APP_NAME, APP_TAGLINE);
+      setMeta(APP_TITLE, APP_TAGLINE);
       reset();
     }
   }
@@ -899,6 +899,10 @@ export function App() {
           <span>{APP_NAME}</span>
         </div>
         <div className="spacer" />
+        <span className="chip chip-ai">
+          <svg width="13" height="13" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M20.8 6.8 Q21.55 10.45 25.2 11.2 Q21.55 11.95 20.8 15.6 Q20.05 11.95 16.4 11.2 Q20.05 10.45 20.8 6.8 Z" fill="currentColor" /><path d="M9.5 17 Q10 19.4 12.4 19.9 Q10 20.4 9.5 22.8 Q9 20.4 6.6 19.9 Q9 19.4 9.5 17 Z" fill="currentColor" /></svg>
+          AI-powered
+        </span>
         <span className="chip">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 11V8a6 6 0 1112 0v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><rect x="4" y="11" width="16" height="9" rx="2" fill="currentColor" opacity=".18" /><rect x="4" y="11" width="16" height="9" rx="2" stroke="currentColor" strokeWidth="2" /></svg>
           Runs in your browser
@@ -986,7 +990,7 @@ export function App() {
 
             <div className="how">
               <div className="how-step"><span className="how-num">1</span><div><div className="how-t">Drop</div><div className="how-d">One or more files, read locally in seconds.</div></div></div>
-              <div className="how-step"><span className="how-num">2</span><div><div className="how-t">Describe</div><div className="how-d">Say what you need — join, clean, summarize, chart.</div></div></div>
+              <div className="how-step"><span className="how-num">2</span><div><div className="how-t">Describe</div><div className="how-d">Say what you need in plain English — the AI writes the recipe.</div></div></div>
               <div className="how-step"><span className="how-num">3</span><div><div className="how-t">Reuse</div><div className="how-d">Save the recipe, re-run it next month.</div></div></div>
             </div>
 
