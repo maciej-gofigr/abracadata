@@ -47,12 +47,18 @@ def _ensure_sqlite_dir() -> None:
 
 
 def init_db() -> None:
-    """Create all tables (and the sqlite data dir if applicable)."""
-    _ensure_sqlite_dir()
-    # Import models so they are registered on Base.metadata before create_all.
-    from app import models  # noqa: F401
+    """Bring the schema up to date (and create the sqlite data dir if needed).
 
-    Base.metadata.create_all(bind=engine)
+    Uses Alembic rather than ``create_all``: create_all only creates *missing
+    tables*, so it silently skips new columns on existing tables — which passes
+    locally and then breaks production. In prod the container entrypoint also
+    runs the migrations before serving; this call keeps local dev seamless and
+    is a no-op when the schema is already current.
+    """
+    _ensure_sqlite_dir()
+    from app.migrate import run_migrations
+
+    run_migrations()
 
 
 def get_db() -> Iterator[Session]:

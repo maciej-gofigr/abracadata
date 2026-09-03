@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -33,6 +33,9 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(default=_now)
+    # Elevated access (admin tooling). Never set from user input — grant it
+    # deliberately (see `python -m app.admin grant <email>`).
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
 class LoginCode(Base):

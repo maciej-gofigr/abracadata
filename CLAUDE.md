@@ -110,6 +110,14 @@ Accounts are optional (anonymous-first). The data flow spans both packages:
   returns the code in the response for local use — wire a real mailer (e.g. SES) for prod.
 - **Persistence:** SQLAlchemy 2.0; sqlite `backend/data/app.db` by default, Postgres via compose
   (`DATABASE_URL`). Recipe versions are immutable snapshots (script + params + param_values + inputs).
+- **Migrations (Alembic) — never `create_all`.** The schema changes only via revisions in
+  `backend/alembic/versions/`. After editing a model: `cd backend && alembic revision --autogenerate -m
+  "..."`, then review the generated file. `app/migrate.py` applies them (run by the container
+  entrypoint before uvicorn, and by `init_db` for local dev); it also *adopts* a pre-Alembic database by
+  stamping the initial revision. Two traps CI now guards: a model change with no revision (tests assert
+  autogenerate finds no diff), and sqlite-only DDL — autogenerate against sqlite can emit defaults
+  Postgres rejects (e.g. `server_default=sa.text('0')` for a boolean; use `sa.false()`), so migrations
+  are also applied against Postgres in CI. Admin flag: `python -m app.admin grant <email>`.
 - **Sharing:** a recipe can have an unguessable `share_token` (`POST/DELETE /recipes/{id}/share`).
   `GET /recipes/shared/{token}` is **public** (no auth) and returns only the recipe *text* (script +
   expected columns + knob defaults) — never any data or owner identity. Since execution is client-side,
