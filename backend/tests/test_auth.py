@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from datetime import timedelta
 from typing import Iterator
 
 os.environ["AUTH_DEV_ECHO"] = "1"  # request returns the code for testing
@@ -50,6 +51,16 @@ def app() -> FastAPI:
     fastapi_app.include_router(recipes_router)
     fastapi_app.dependency_overrides[get_db] = _override_get_db
     return fastapi_app
+
+
+@pytest.fixture(autouse=True)
+def _relax_send_limits(monkeypatch):
+    """Most tests here exercise the sign-in flow, not the throttle — the 60s
+    per-address cooldown would otherwise block their repeated sign-ins.
+    The limiter itself is covered by the dedicated tests at the end."""
+    monkeypatch.setattr(auth, "SEND_COOLDOWN", timedelta(0))
+    monkeypatch.setattr(auth, "MAX_PER_EMAIL", 10_000)
+    monkeypatch.setattr(auth, "MAX_PER_IP", 10_000)
 
 
 def _sign_in(client: TestClient, email: str) -> None:
@@ -169,3 +180,57 @@ def test_send_code_surfaces_send_failure(monkeypatch):
     with pytest.raises(HTTPException) as e:
         auth._send_code("someone@example.com", "123456")
     assert e.value.status_code == 502
+
+
+def test_rate_limit_cooldown_between_codes(app: FastAPI, monkeypatch):
+    """A second code for the same address within the cooldown is refused."""
+    client = TestClient(app)
+    monkeypatch.setattr(auth, "SEND_COOLDOWN", timedelta(seconds=60))
+    assert client.post("/auth/request", json={"email": "rl@example.com"}).status_code == 200
+    r = client.post("/auth/request", json={"email": "rl@example.com"})
+    assert r.status_code == 429
+    assert "just sent" in r.json()["detail"].lower()
+
+
+def test_rate_limit_hourly_cap_per_email(app: FastAPI, monkeypatch):
+    """An address is capped per hour even without hitting the cooldown."""
+    client = TestClient(app)
+    monkeypatch.setattr(auth, "SEND_COOLDOWN", timedelta(0))
+    monkeypatch.setattr(auth, "MAX_PER_EMAIL", 3)
+    for _ in range(3):
+        assert client.post("/auth/request", json={"email": "cap@example.com"}).status_code == 200
+    r = client.post("/auth/request", json={"email": "cap@example.com"})
+    assert r.status_code == 429
+
+
+def test_rate_limit_per_ip_across_addresses(app: FastAPI, monkeypatch):
+    """One client can't bomb many different addresses (the email-bomb vector).
+
+    Uses a distinct X-Forwarded-For so the count starts clean — which also
+    covers the header path we rely on behind Caddy.
+    """
+    client = TestClient(app)
+    monkeypatch.setattr(auth, "SEND_COOLDOWN", timedelta(0))
+    monkeypatch.setattr(auth, "MAX_PER_EMAIL", 10_000)
+    monkeypatch.setattr(auth, "MAX_PER_IP", 3)
+    hdr = {"x-forwarded-for": "203.0.113.7, 10.0.0.1"}  # client first, then proxy
+    for i in range(3):
+        r = client.post("/auth/request", json={"email": f"v{i}@example.com"}, headers=hdr)
+        assert r.status_code == 200, r.text
+    r = client.post("/auth/request", json={"email": "v99@example.com"}, headers=hdr)
+    assert r.status_code == 429
+    # a different client IP is unaffected
+    r = client.post("/auth/request", json={"email": "other@example.com"},
+                    headers={"x-forwarded-for": "198.51.100.4"})
+    assert r.status_code == 200, r.text
+
+
+def test_no_email_is_sent_when_rate_limited(app: FastAPI, monkeypatch):
+    """The throttle must run BEFORE delivery — a blocked request sends nothing."""
+    client = TestClient(app)
+    monkeypatch.setattr(auth, "SEND_COOLDOWN", timedelta(seconds=60))
+    sent: list[str] = []
+    monkeypatch.setattr(auth, "_send_code", lambda e, c: sent.append(e))
+    assert client.post("/auth/request", json={"email": "quiet@example.com"}).status_code == 200
+    assert client.post("/auth/request", json={"email": "quiet@example.com"}).status_code == 429
+    assert sent == ["quiet@example.com"]  # exactly one send, not two

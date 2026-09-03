@@ -19,13 +19,13 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import AnonSession, LoginCode, Recipe, User
+from app.models import AnonSession, LoginAttempt, LoginCode, Recipe, User
 from app.owner import Principal, get_principal, get_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -34,6 +34,13 @@ log = logging.getLogger("app.auth")
 CODE_TTL = timedelta(minutes=10)
 # Product name used in sign-in emails (frontend's source of truth is branding.ts).
 APP_NAME = os.environ.get("APP_NAME", "Abracadata")
+
+# Rate limits for issuing sign-in codes (see _enforce_send_limits).
+SEND_COOLDOWN = timedelta(seconds=60)   # between codes to the same address
+MAX_PER_EMAIL = 5                       # per address …
+EMAIL_WINDOW = timedelta(hours=1)       # … per hour
+MAX_PER_IP = 20                         # per client IP …
+IP_WINDOW = timedelta(hours=1)          # … per hour
 
 
 def _now() -> datetime:
@@ -123,9 +130,60 @@ class RequestResponse(BaseModel):
     dev_code: Optional[str] = None
 
 
+def _client_ip(request: Request) -> str:
+    """Caller IP — behind Caddy the real client is the first X-Forwarded-For entry."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "")[:64]
+
+
+def _enforce_send_limits(db: Session, email: str, ip: str) -> None:
+    """Throttle code requests.
+
+    Sign-in codes are emails we send to an address the *requester* typed, so an
+    unthrottled endpoint is an email-bombing tool: it mails strangers unsolicited
+    codes, and the resulting spam complaints put the SES account at risk. Limits
+    are per-address and per-IP, enforced before anything is sent.
+    """
+    now = _now()
+    recent_email = db.execute(
+        select(func.count())
+        .select_from(LoginAttempt)
+        .where(LoginAttempt.email == email, LoginAttempt.created_at > now - EMAIL_WINDOW)
+    ).scalar_one()
+    if recent_email >= MAX_PER_EMAIL:
+        raise HTTPException(429, "Too many sign-in codes requested for this address. Try again later.")
+
+    last = db.execute(
+        select(func.max(LoginAttempt.created_at)).where(LoginAttempt.email == email)
+    ).scalar_one_or_none()
+    if last is not None:
+        if last.tzinfo is None:  # sqlite returns naive datetimes
+            last = last.replace(tzinfo=timezone.utc)
+        if now - last < SEND_COOLDOWN:
+            raise HTTPException(429, "A code was just sent. Check your inbox, or try again in a minute.")
+
+    if ip:
+        recent_ip = db.execute(
+            select(func.count())
+            .select_from(LoginAttempt)
+            .where(LoginAttempt.ip == ip, LoginAttempt.created_at > now - IP_WINDOW)
+        ).scalar_one()
+        if recent_ip >= MAX_PER_IP:
+            raise HTTPException(429, "Too many sign-in requests. Try again later.")
+
+    db.add(LoginAttempt(email=email, ip=ip))
+    # Keep the table small; this is the only place it grows.
+    db.execute(delete(LoginAttempt).where(LoginAttempt.created_at < now - timedelta(days=1)))
+
+
 @router.post("/request", response_model=RequestResponse)
-def request_code(body: RequestBody, db: Session = Depends(get_db)) -> RequestResponse:
+def request_code(
+    body: RequestBody, request: Request, db: Session = Depends(get_db)
+) -> RequestResponse:
     email = _normalize(body.email)
+    _enforce_send_limits(db, email, _client_ip(request))
     # Invalidate any outstanding codes for this address, then issue a fresh one.
     db.execute(delete(LoginCode).where(LoginCode.email == email))
     code = f"{secrets.randbelow(1_000_000):06d}"

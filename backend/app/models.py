@@ -47,6 +47,22 @@ class LoginCode(Base):
     created_at: Mapped[datetime] = mapped_column(default=_now)
 
 
+class LoginAttempt(Base):
+    """One record per sign-in-code request, for rate limiting.
+
+    Kept separate from LoginCode because issuing a new code deletes the old one
+    (only the latest may be redeemed), which would otherwise erase the history
+    the limiter needs. Rows are pruned after a day.
+    """
+
+    __tablename__ = "login_attempts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    ip: Mapped[str] = mapped_column(String(64), index=True, default="")
+    created_at: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+
 class AnonSession(Base):
     __tablename__ = "anon_sessions"
 
