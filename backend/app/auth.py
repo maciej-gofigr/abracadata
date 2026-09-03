@@ -36,11 +36,16 @@ CODE_TTL = timedelta(minutes=10)
 APP_NAME = os.environ.get("APP_NAME", "Abracadata")
 
 # Rate limits for issuing sign-in codes (see _enforce_send_limits).
-SEND_COOLDOWN = timedelta(seconds=60)   # between codes to the same address
-MAX_PER_EMAIL = 5                       # per address …
-EMAIL_WINDOW = timedelta(hours=1)       # … per hour
-MAX_PER_IP = 20                         # per client IP …
-IP_WINDOW = timedelta(hours=1)          # … per hour
+#
+# Deliberately a rolling hourly budget with NO fixed cooldown: a hard wait
+# between sends punishes ordinary behaviour (dismissing the dialog, mistyping the
+# code, an email that's slow to arrive) at the exact moment someone is trying to
+# sign in. A burst is fine; sustained volume to one address is not, because that
+# is what an email-bombing attempt looks like.
+MAX_PER_EMAIL = 10                      # per address …
+EMAIL_WINDOW = timedelta(hours=1)       # … per rolling hour
+MAX_PER_IP = 40                         # per client IP …
+IP_WINDOW = timedelta(hours=1)          # … per rolling hour
 
 
 def _now() -> datetime:
@@ -138,6 +143,29 @@ def _client_ip(request: Request) -> str:
     return (request.client.host if request.client else "")[:64]
 
 
+def _retry_after(db: Session, column, value: str, window: timedelta, now: datetime) -> int:
+    """Seconds until the oldest attempt in the window ages out (>=1)."""
+    oldest = db.execute(
+        select(func.min(LoginAttempt.created_at)).where(column == value, LoginAttempt.created_at > now - window)
+    ).scalar_one_or_none()
+    if oldest is None:
+        return 1
+    if oldest.tzinfo is None:  # sqlite returns naive datetimes
+        oldest = oldest.replace(tzinfo=timezone.utc)
+    return max(1, int((oldest + window - now).total_seconds()))
+
+
+def _too_many(seconds: int) -> HTTPException:
+    """429 with a human message and a correct Retry-After header."""
+    mins = max(1, round(seconds / 60))
+    when = "a minute" if mins <= 1 else f"{mins} minutes"
+    return HTTPException(
+        status_code=429,
+        detail=f"That's a lot of sign-in codes. Please try again in {when}.",
+        headers={"Retry-After": str(seconds)},
+    )
+
+
 def _enforce_send_limits(db: Session, email: str, ip: str) -> None:
     """Throttle code requests.
 
@@ -153,16 +181,7 @@ def _enforce_send_limits(db: Session, email: str, ip: str) -> None:
         .where(LoginAttempt.email == email, LoginAttempt.created_at > now - EMAIL_WINDOW)
     ).scalar_one()
     if recent_email >= MAX_PER_EMAIL:
-        raise HTTPException(429, "Too many sign-in codes requested for this address. Try again later.")
-
-    last = db.execute(
-        select(func.max(LoginAttempt.created_at)).where(LoginAttempt.email == email)
-    ).scalar_one_or_none()
-    if last is not None:
-        if last.tzinfo is None:  # sqlite returns naive datetimes
-            last = last.replace(tzinfo=timezone.utc)
-        if now - last < SEND_COOLDOWN:
-            raise HTTPException(429, "A code was just sent. Check your inbox, or try again in a minute.")
+        raise _too_many(_retry_after(db, LoginAttempt.email, email, EMAIL_WINDOW, now))
 
     if ip:
         recent_ip = db.execute(
@@ -171,7 +190,7 @@ def _enforce_send_limits(db: Session, email: str, ip: str) -> None:
             .where(LoginAttempt.ip == ip, LoginAttempt.created_at > now - IP_WINDOW)
         ).scalar_one()
         if recent_ip >= MAX_PER_IP:
-            raise HTTPException(429, "Too many sign-in requests. Try again later.")
+            raise _too_many(_retry_after(db, LoginAttempt.ip, ip, IP_WINDOW, now))
 
     db.add(LoginAttempt(email=email, ip=ip))
     # Keep the table small; this is the only place it grows.

@@ -27,6 +27,18 @@ export function authMe(): Promise<{ email: string | null }> {
   return fetch("/api/auth/me", { credentials: "include" }).then(j<{ email: string | null }>);
 }
 
+/** FastAPI puts a human-readable reason in `detail`; prefer it over a bare status
+ * code, which is what users were being shown for throttled sign-ins. */
+async function serverDetail(r: Response): Promise<string | null> {
+  try {
+    const body = await r.json();
+    const d = (body as { detail?: unknown }).detail;
+    return typeof d === "string" && d.trim() ? d.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function authRequest(email: string): Promise<{ sent: boolean; dev_code: string | null }> {
   return fetch("/api/auth/request", {
     method: "POST",
@@ -35,7 +47,10 @@ export function authRequest(email: string): Promise<{ sent: boolean; dev_code: s
     body: JSON.stringify({ email }),
   }).then(async (r) => {
     if (r.status === 422) throw new Error("Enter a valid email address.");
-    if (!r.ok) throw new Error(`Couldn't send the code (${r.status}).`);
+    if (r.status === 429) {
+      throw new Error((await serverDetail(r)) ?? "That's a lot of sign-in codes. Please try again in a few minutes.");
+    }
+    if (!r.ok) throw new Error((await serverDetail(r)) ?? `Couldn't send the code (${r.status}).`);
     return r.json();
   });
 }
@@ -48,7 +63,10 @@ export function authVerify(email: string, code: string): Promise<{ email: string
     body: JSON.stringify({ email, code }),
   }).then(async (r) => {
     if (r.status === 400) throw new Error("That code is invalid or expired.");
-    if (!r.ok) throw new Error(`Sign-in failed (${r.status}).`);
+    if (r.status === 429) {
+      throw new Error((await serverDetail(r)) ?? "Too many attempts. Please try again in a few minutes.");
+    }
+    if (!r.ok) throw new Error((await serverDetail(r)) ?? `Sign-in failed (${r.status}).`);
     return r.json();
   });
 }
