@@ -120,3 +120,44 @@ def test_kill_switch_blocks_generation_without_calling_bedrock(app: FastAPI, mon
     assert called is False
 
     admin.post("/admin/flags/llm", json={"enabled": True})
+
+
+def test_cost_errors_are_not_cached_but_successes_are(app: FastAPI, monkeypatch) -> None:
+    """A failed cost lookup must not be sticky.
+
+    Otherwise granting the permission would appear to do nothing for six hours,
+    and the only fix would be restarting the server.
+    """
+    import app.admin_api as admin_api
+
+    admin = TestClient(app)
+    _sign_in(admin, "cost@example.com")
+    _make_admin("cost@example.com")
+    admin_api._cost_cache["at"] = None
+    admin_api._cost_cache["data"] = None
+
+    # 1. Permission missing -> error, and nothing is cached.
+    def _denied():
+        raise RuntimeError("AccessDenied")
+
+    monkeypatch.setattr(admin_api, "_fetch_costs", _denied)
+    r = admin.get("/admin/costs").json()
+    assert r["error"] and r["total"] == 0.0
+    assert admin_api._cost_cache["data"] is None, "an error must never be cached"
+
+    # 2. Permission granted -> the very next request retries and succeeds.
+    def _ok():
+        return admin_api.CostResponse(
+            month="September 2026", total=12.34, currency="USD",
+            by_service=[{"service": "Amazon EC2", "amount": 12.34}],
+            cached_at="now",
+        )
+
+    monkeypatch.setattr(admin_api, "_fetch_costs", _ok)
+    r = admin.get("/admin/costs").json()
+    assert r["error"] is None and r["total"] == 12.34
+
+    # 3. Success IS cached — a later failure doesn't wipe a good reading.
+    monkeypatch.setattr(admin_api, "_fetch_costs", _denied)
+    r = admin.get("/admin/costs").json()
+    assert r["total"] == 12.34 and r["error"] is None

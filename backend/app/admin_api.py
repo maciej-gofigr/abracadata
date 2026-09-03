@@ -116,7 +116,14 @@ def costs(_: Principal = Depends(require_admin), refresh: bool = False) -> CostR
         return CostResponse(
             month=now.strftime("%B %Y"), total=0.0, currency="USD", by_service=[],
             cached_at=now.isoformat(),
-            error="Couldn't read AWS costs (needs ce:GetCostAndUsage on the instance role).",
+            # Name the permission, not a specific identity: in prod that's the EC2
+            # instance role, but locally it's whatever boto3's credential chain
+            # resolves to (backend/.env's IAM key, or the SSO profile).
+            error=(
+                "Couldn't read AWS costs. The credentials this server is using need "
+                "ce:GetCostAndUsage — in production that's the EC2 instance role; "
+                "locally it's the key in backend/.env or your SSO profile."
+            ),
         )
     _cost_cache["at"], _cost_cache["data"] = now, data
     return data
