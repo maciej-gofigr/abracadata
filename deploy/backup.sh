@@ -11,11 +11,28 @@ APP_DIR="${APP_DIR:-/opt/prestidata}"
 COMPOSE="$APP_DIR/docker-compose.prod.yml"
 cd "$APP_DIR"
 
-# shellcheck disable=SC1091
-set -a; . "$APP_DIR/.env"; set +a
-: "${POSTGRES_USER:?}" "${POSTGRES_DB:?}"
-REGION="${AWS_REGION:-us-east-2}"
-BUCKET="${BACKUP_BUCKET:?BACKUP_BUCKET must be set in $APP_DIR/.env}"
+# Read .env literally, the way docker compose does — do NOT `.`-source it.
+# Compose accepts unquoted values containing spaces (DOMAIN=abracadata.me
+# www.abracadata.me is a legitimate two-host Caddy site block), but sourcing
+# that in a shell tries to *run* `www.abracadata.me` and the backup dies at
+# line 1 with "command not found".
+env_get() {
+  local v
+  v="$(sed -n "s/^$1=//p" "$APP_DIR/.env" | tail -1)"
+  v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
+  printf '%s' "$v"
+}
+
+POSTGRES_USER="$(env_get POSTGRES_USER)"
+POSTGRES_DB="$(env_get POSTGRES_DB)"
+MAIL_FROM="$(env_get MAIL_FROM)"
+ALERT_EMAIL="$(env_get ALERT_EMAIL)"
+REGION="$(env_get AWS_REGION)"; REGION="${REGION:-us-east-2}"
+BUCKET="$(env_get BACKUP_BUCKET)"
+
+: "${POSTGRES_USER:?POSTGRES_USER missing from $APP_DIR/.env}"
+: "${POSTGRES_DB:?POSTGRES_DB missing from $APP_DIR/.env}"
+: "${BUCKET:?BACKUP_BUCKET must be set in $APP_DIR/.env}"
 
 STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
 KEY="postgres/${POSTGRES_DB}-${STAMP}.sql.gz"
@@ -26,7 +43,7 @@ fail() {
   echo "backup FAILED: $*" >&2
   # A backup that quietly stops working is worse than none, because you believe
   # you're covered. Best-effort alert; never let it mask the original failure.
-  if [ -n "${MAIL_FROM:-}" ] && [ -n "${ALERT_EMAIL:-}" ]; then
+  if [ -n "$MAIL_FROM" ] && [ -n "$ALERT_EMAIL" ]; then
     docker run --rm -e AWS_REGION="$REGION" amazon/aws-cli:latest sesv2 send-email \
       --from-email-address "$MAIL_FROM" \
       --destination "ToAddresses=$ALERT_EMAIL" \
