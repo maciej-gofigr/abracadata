@@ -64,7 +64,7 @@ export function RecipePanel({
       </div>
 
       {active === "steps" ? (
-        <div className="card-body">
+        <div className="card-body recipe-steps">
           <RecipeFlow inputs={inputs} steps={steps} tables={tables} plots={plots} />
         </div>
       ) : (

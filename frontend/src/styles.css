@@ -647,3 +647,32 @@ button.admin-badge:hover { background: var(--spark); color: var(--on-accent); }
 .budget-bar { height: 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; margin: 12px 0 4px; }
 .budget-fill { height: 100%; background: var(--add); transition: width .3s; }
 .budget-fill.warn { background: var(--spark); }
+
+/* The steps diagram scrolls within the panel, like the Code tab (both capped at
+   480px). Without this a long recipe's steps grow the card until they push the
+   output table/chart out of the result pane entirely. */
+.recipe-panel .card-body.recipe-steps { max-height: 480px; overflow-y: auto; }
+
+/* ---- top bar on small screens -------------------------------------------
+   The bar is one non-wrapping flex row, and flex items don't shrink below their
+   content by default, so on a phone the account controls were pushed off-screen.
+   Drop things in order of how little they're needed: the chips are ambient
+   context, the account controls are functional. Pure CSS — no JS, so there's no
+   layout flash on load. */
+@media (max-width: 768px) {
+  .topbar .chip { display: none; }
+}
+@media (max-width: 560px) {
+  .topbar { gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .brand { font-size: 14.5px; gap: 7px; }
+  .brand svg { width: 21px; height: 21px; }
+  /* min-width:0 lets the email actually ellipsize instead of forcing overflow */
+  .account { min-width: 0; }
+  .account-email { max-width: 108px; }
+  .btn { padding: 7px 11px; }
+}
+@media (max-width: 400px) {
+  /* Last to go: the address is the least useful thing here — you know who you
+     are — while Sign out has to stay reachable. */
+  .account-email { display: none; }
+}
