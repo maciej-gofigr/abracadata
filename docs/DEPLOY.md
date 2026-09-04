@@ -95,12 +95,48 @@ sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/maciej-gofigr/abracad
 
 ## 5. Backups
 
-`pgdata` lives on the EBS volume. For a POC, a nightly logical dump to S3:
+`pgdata` lives on the box's root EBS volume, which is `delete_on_termination` —
+so losing the instance loses every account, saved recipe and setting. A nightly
+dump to S3 is the copy that makes that survivable.
+
+**It runs automatically.** `deploy/backup.sh` plus a systemd timer (03:17 UTC,
+`Persistent=true`, so a box that was off still runs once it's back) are installed
+and refreshed by `box-setup.sh` on every deploy. Terraform creates the bucket
+(versioned, encrypted, public access blocked, 30-day expiry) and grants the
+instance role access; `terraform output backup_bucket` gives its name, which must
+be set as `BACKUP_BUCKET` in `/opt/prestidata/.env`. Set `ALERT_EMAIL` too — the
+script emails on failure, because a backup that silently stops is worse than none.
+
+Check on it:
 ```sh
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U prestidata prestidata | gzip | aws s3 cp - s3://<bucket>/prestidata/$(date +%F).sql.gz
+systemctl list-timers abracadata-backup.timer      # when it next runs
+journalctl -u abracadata-backup.service -n 20      # how the last run went
+aws s3 ls s3://$(terraform -chdir=terraform output -raw backup_bucket)/postgres/
 ```
-(Put that in a cron/systemd-timer.) Or snapshot the EBS volume.
+
+### Restoring
+
+Verify a dump by restoring it somewhere disposable *before* you need it:
+```sh
+aws s3 cp s3://<bucket>/postgres/<file>.sql.gz .
+docker run -d --name pgtest -e POSTGRES_PASSWORD=x \
+  -e POSTGRES_USER=prestidata -e POSTGRES_DB=prestidata postgres:16-alpine
+zcat <file>.sql.gz | docker exec -i pgtest psql -q -U prestidata -d prestidata
+docker exec pgtest psql -U prestidata -d prestidata -c '\dt'
+docker rm -f pgtest
+```
+
+To restore **over production** (destructive — the dump is `--clean --if-exists`,
+so it drops existing objects first):
+```sh
+cd /opt/prestidata
+docker compose -f docker-compose.prod.yml stop backend   # no writes mid-restore
+zcat <file>.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U prestidata -d prestidata
+docker compose -f docker-compose.prod.yml start backend
+```
+The dump carries the `alembic_version` row, so the restored DB reports the schema
+revision it was taken at; a newer image will migrate it forward on next start.
 
 ## 6. Email sign-in (Amazon SES)
 
