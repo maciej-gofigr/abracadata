@@ -48,6 +48,19 @@ else
   echo "Keeping existing .env."
 fi
 
+# --- nightly backups: install/refresh the script and its systemd timer -------
+echo "Installing the nightly backup timer…"
+curl -fsSL "$RAW/deploy/backup.sh" -o "$APP_DIR/backup.sh"
+chmod +x "$APP_DIR/backup.sh"
+curl -fsSL "$RAW/deploy/abracadata-backup.service" -o /etc/systemd/system/abracadata-backup.service
+curl -fsSL "$RAW/deploy/abracadata-backup.timer" -o /etc/systemd/system/abracadata-backup.timer
+systemctl daemon-reload
+systemctl enable --now abracadata-backup.timer
+if ! grep -q '^BACKUP_BUCKET=' "$APP_DIR/.env"; then
+  echo "NOTE: BACKUP_BUCKET is not set in $APP_DIR/.env — backups will fail until it is."
+  echo "      Get it from: terraform output backup_bucket"
+fi
+
 echo "Pulling images and starting…"
 docker compose -f "$COMPOSE" pull
 docker compose -f "$COMPOSE" up -d

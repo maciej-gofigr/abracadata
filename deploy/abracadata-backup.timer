@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Abracadata Postgres backup nightly
+
+[Timer]
+# 03:17 UTC — off the hour so it doesn't contend with everyone else's cron.
+OnCalendar=*-*-* 03:17:00
+# If the box was off at the scheduled time, run once it's back.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

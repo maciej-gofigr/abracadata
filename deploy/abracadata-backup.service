@@ -1,0 +1,11 @@
+[Unit]
+Description=Abracadata nightly Postgres backup to S3
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/prestidata/backup.sh
+# Surface failures in `systemctl status` / journal rather than silently retrying.
+StandardOutput=journal
+StandardError=journal
