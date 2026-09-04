@@ -9,7 +9,13 @@
 // app never depends on analytics being present.
 
 const GA_ID = (import.meta.env.VITE_GA_MEASUREMENT_ID ?? "").trim();
-const ADS_ID = (import.meta.env.VITE_ADS_CONVERSION_ID ?? "").trim();
+// One or more Google Ads conversion IDs, comma-separated. A conversion ID is
+// per-Ads-account, so a campaign built in a second account needs its own ID
+// tagged alongside the first — one page can carry both.
+const ADS_IDS = (import.meta.env.VITE_ADS_CONVERSION_ID ?? "")
+  .split(",")
+  .map((s: string) => s.trim())
+  .filter(Boolean);
 // Conversion labels, e.g. "AbC-D_efGhIjK". Empty = that conversion isn't sent.
 const ADS_LABELS: Record<string, string> = {
   save_recipe: (import.meta.env.VITE_ADS_LABEL_SAVE_RECIPE ?? "").trim(),
@@ -55,7 +61,7 @@ export function initAnalytics(): void {
   // SPA route changes still send their own page_view via trackPageView(); only
   // the first one comes from here, so nothing is double-counted.
   window.gtag("config", GA_ID, DEBUG ? { debug_mode: true } : {});
-  if (ADS_ID) window.gtag("config", ADS_ID);
+  for (const id of ADS_IDS) window.gtag("config", id);
 
   const s = document.createElement("script");
   s.async = true;
@@ -72,8 +78,10 @@ export function track(event: string, params: Params = {}): void {
 export function trackConversion(event: string, params: Params = {}): void {
   track(event, params);
   const label = ADS_LABELS[event];
-  if (ADS_ID && label) {
-    window.gtag?.("event", "conversion", { send_to: `${ADS_ID}/${label}` });
+  // A label belongs to one account's conversion action, so it pairs with the
+  // first ID. Conversions for the other account come in through the GA4 link.
+  if (ADS_IDS[0] && label) {
+    window.gtag?.("event", "conversion", { send_to: `${ADS_IDS[0]}/${label}` });
   }
 }
 

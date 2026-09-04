@@ -63,7 +63,12 @@ docker compose -f "$COMPOSE" exec -T postgres \
 gzip -t "$TMP" || fail "dump is not a valid gzip archive"
 SIZE=$(stat -c%s "$TMP")
 [ "$SIZE" -ge 1000 ] || fail "dump suspiciously small (${SIZE} bytes)"
+# pipefail is off for just this check: `grep -q` exits at the first match, which
+# SIGPIPEs zcat, which pipefail would then report as a failed pipeline — i.e. the
+# check would fail precisely when it found what it was looking for.
+set +o pipefail
 zcat "$TMP" | grep -q "CREATE TABLE" || fail "dump contains no CREATE TABLE statements"
+set -o pipefail
 
 echo "==> uploading s3://$BUCKET/$KEY (${SIZE} bytes)"
 docker run --rm -e AWS_REGION="$REGION" -v "$TMP:/dump.sql.gz:ro" \
