@@ -26,7 +26,15 @@ DATABASE_URL = os.environ.get("DATABASE_URL") or APP_DATABASE_URL
 config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False is essential, not tidiness. Migrations also
+    # run IN-PROCESS inside the API (init_db() in the FastAPI lifespan), and
+    # fileConfig defaults to disabling every logger absent from alembic.ini —
+    # whose [loggers] section lists only root, sqlalchemy and alembic. That
+    # silently switched off uvicorn.error and uvicorn.access one second after
+    # every boot, so the API emitted no access logs at all. When the box died of
+    # an OOM on 2026-09-09 there was consequently no record of which request was
+    # responsible.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

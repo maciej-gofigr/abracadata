@@ -8,6 +8,7 @@ missing the column and errors at runtime.
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 
@@ -70,3 +71,25 @@ def test_single_migration_head() -> None:
     """Branching heads would make `upgrade head` ambiguous at deploy time."""
     script = ScriptDirectory.from_config(_config("sqlite://"))
     assert len(script.get_heads()) == 1, f"expected one head, got {script.get_heads()}"
+
+
+def test_migrations_do_not_disable_the_apps_loggers(migrated_url: str) -> None:
+    """Running migrations must not switch off uvicorn's logging.
+
+    init_db() runs migrations in-process during the FastAPI lifespan, so
+    alembic/env.py's fileConfig() call executes inside the live API. fileConfig
+    defaults to disable_existing_loggers=True, and alembic.ini's [loggers]
+    section names only root/sqlalchemy/alembic — so the default silently
+    disabled uvicorn.error and uvicorn.access a second after every boot. The API
+    then served five days of traffic without emitting a single access line,
+    which is why an OOM outage on 2026-09-09 could not be traced to a request.
+    """
+    access = logging.getLogger("uvicorn.access")
+    error = logging.getLogger("uvicorn.error")
+    access.disabled = False
+    error.disabled = False
+
+    command.upgrade(_config(migrated_url), "head")
+
+    assert not access.disabled, "alembic disabled uvicorn.access — pass disable_existing_loggers=False"
+    assert not error.disabled, "alembic disabled uvicorn.error — pass disable_existing_loggers=False"
