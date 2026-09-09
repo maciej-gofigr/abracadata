@@ -48,6 +48,26 @@ else
   echo "Keeping existing .env."
 fi
 
+# --- swap: a safety margin, not a performance feature ------------------------
+# With zero swap, memory exhaustion goes straight from "fine" to "kernel wedged"
+# — that is how the box was lost on 2026-09-09. Swap gives the OOM killer room
+# to act and keeps sshd/SSM answering long enough to intervene. swappiness=10
+# keeps it as a reserve rather than something the kernel reaches for routinely.
+if ! swapon --show | grep -q .; then
+  echo "No swap — creating a 2G swapfile…"
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+else
+  echo "Swap already present — leaving it alone."
+fi
+if ! grep -q '^vm.swappiness' /etc/sysctl.d/99-swappiness.conf 2>/dev/null; then
+  echo 'vm.swappiness=10' > /etc/sysctl.d/99-swappiness.conf
+  sysctl -q -w vm.swappiness=10
+fi
+
 # --- nightly backups: install/refresh the script and its systemd timer -------
 echo "Installing the nightly backup timer…"
 curl -fsSL "$RAW/deploy/backup.sh" -o "$APP_DIR/backup.sh"

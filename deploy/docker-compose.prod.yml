@@ -3,11 +3,21 @@
 # EC2 instance role (no keys on the box) — see docs/DEPLOY.md.
 #
 # Deploy from /opt/prestidata with this file + a .env (see deploy/.env.example).
+#
+# Memory caps (mem_limit) exist because on 2026-09-09 an unbounded backend grew
+# to 1.45 GB, and the host OOM killer — which picks its victim by heuristic, not
+# by whose fault it is — took the box down with it, including sshd/SSM. Capped,
+# a runaway backend hits its own limit and only that container dies. The limits
+# sum to ~2.8 GB of the 4 GB box, leaving headroom for the kernel, dockerd and
+# the SSM agent. memswap_limit == mem_limit denies containers swap: swap is a
+# safety margin for the host, not a way for a leaking process to keep growing.
 
 services:
   web:
     image: ${IMAGE_REPO}/prestidata-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
     depends_on: [backend]
     ports:
       - "80:80"
@@ -27,10 +37,18 @@ services:
   backend:
     image: ${IMAGE_REPO}/prestidata-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    mem_limit: 1536m
+    memswap_limit: 1536m
     depends_on:
       postgres:
         condition: service_healthy
     environment:
+      # Python block-buffers stdout when it is not a TTY, and uvicorn writes its
+      # ACCESS log to stdout (only the error log goes to stderr). During the
+      # 2026-09-09 outage that meant every access line sat unflushed in a 4 KB
+      # buffer and was lost with the process — the logs needed to identify what
+      # exhausted memory never reached disk. Unbuffered, they do.
+      PYTHONUNBUFFERED: "1"
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       AWS_REGION: ${AWS_REGION:-us-east-2}
       BEDROCK_MODEL: ${BEDROCK_MODEL:-global.anthropic.claude-sonnet-4-6}
@@ -46,6 +64,8 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 1024m
+    memswap_limit: 1024m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

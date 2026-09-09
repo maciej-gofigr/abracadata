@@ -11,9 +11,9 @@ variable "aws_region" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type. The Ubuntu AMI architecture auto-follows this (Graviton 't*g*' families -> arm64, else amd64). t3.small = 2 GB amd64; t4g.small = 2 GB ARM."
+  description = "EC2 instance type. The Ubuntu AMI architecture auto-follows this (Graviton 't*g*' families -> arm64, else amd64). t3.medium = 4 GB amd64; t4g.medium = 4 GB ARM. Sized at 4 GB after a 2 GB box was wedged by an OOM (see docs/DEPLOY.md)."
   type        = string
-  default     = "t3.small"
+  default     = "t3.medium"
 }
 
 variable "root_volume_gb" {
